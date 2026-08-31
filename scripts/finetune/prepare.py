@@ -1138,23 +1138,29 @@ N5K_HOUSEHOLD = {
     "banana": ("banana", 1, "medium", 80, 160),
     "carrot": ("carrot", 1, "medium", 30, 120),
     "cucumber": ("cucumber", 1, "medium", 50, 250),
-    "egg": ("eggs", 2, "large", 80, 200),
+    "egg": ("eggs", 1, "large", 40, 80),
     "onion": ("onion", 1, "medium", 40, 180),
     "orange": ("orange", 1, "medium", 80, 220),
     "pasta": ("pasta", 1, "cup", 80, 280),
     "pizza": ("pizza", 2, "slice", 60, 250),
+    "potato": ("potato", 1, "medium", 80, 300),
     "rice": ("rice", 1, "cup", 80, 250),
     "tomato": ("tomato", 1, "medium", 40, 200),
     "bread": ("bread", 1, "slice", 20, 80),
+    "chicken": ("chicken", 3, "oz", 60, 250),
+    "pork": ("pork", 3, "oz", 60, 250),
+    "beef": ("beef", 3, "oz", 60, 250),
 }
 
 N5K_NAME_CLASS = {
     "apple": "apple",
+    "apples": "apple",
     "banana": "banana",
     "bread": "bread",
     "toast": "bread",
     "carrot": "carrot",
     "carrots": "carrot",
+    "chicken": "chicken",
     "cucumber": "cucumber",
     "cucumbers": "cucumber",
     "egg": "egg",
@@ -1168,29 +1174,26 @@ N5K_NAME_CLASS = {
     "spaghetti": "pasta",
     "pizza": "pizza",
     "cheese pizza": "pizza",
+    "pork": "pork",
+    "beef": "beef",
+    "steak": "beef",
+    "potato": "potato",
+    "potatoes": "potato",
     "rice": "rice",
     "white rice": "rice",
     "brown rice": "rice",
     "tomato": "tomato",
     "tomatoes": "tomato",
-    "cherry tomatoes": "tomato",
 }
 
 
 def n5k_item(name: str, grams: float, rng: random.Random) -> dict:
-    key = re.sub(r"\(raw\)|\(cooked\)", "", name.lower()).strip()
-    cls = N5K_NAME_CLASS.get(key)
-    spec = N5K_HOUSEHOLD.get(cls or "")
-    if spec:
-        query, qty, unit, lo, hi = spec
-        if lo <= float(grams) <= hi:
-            return item_from(query, qty, unit)
-    return grams_item(name, grams, rng)
+    return portion_gold(name, grams, None, rng)
 
 
 def portion_against_ruler(name: str, grams: float, catalog: list[dict]) -> dict:
     """Express weighed grams as a fraction of the USDA household serving shown in RAG."""
-    hits = search_foods(catalog, name, 1)
+    hits = search_foods(catalog, name, 1) if catalog else []
     g = float(grams)
     if hits:
         food = hits[0]
@@ -1199,15 +1202,31 @@ def portion_against_ruler(name: str, grams: float, catalog: list[dict]) -> dict:
         unit = label_unit
         if serve >= 12 and unit and unit not in {"g"}:
             frac = g / serve
-            if 0.15 <= frac <= 6:
+            if 0.35 <= frac <= 6:
                 qty = frac * (label_qty or 1.0)
                 if qty >= 0.85 and abs(qty - round(qty)) < 0.15:
                     qty = max(1, int(round(qty)))
                 else:
                     qty = max(0.25, round(qty, 2))
                 return item_from(name, qty, unit)
-    rounded = max(5, int(round(g / 5.0) * 5))
+    rounded = max(25, int(round(g / 25.0) * 25))
     return item_from(name, rounded, "g")
+
+
+def portion_gold(name: str, grams: float, catalog: list[dict] | None, rng: random.Random) -> dict:
+    """Household units the 450M model can copy. Never teach 7 g of an apple."""
+    g = float(grams)
+    key = re.sub(r"\(raw\)|\(cooked\)", "", name.lower()).strip()
+    if re.search(r"\boil\b", key):
+        return item_from(name, 1, "tbsp" if g >= 7 else "tsp")
+    spec = N5K_HOUSEHOLD.get(N5K_NAME_CLASS.get(key) or "")
+    if spec:
+        query, qty, unit, lo, _hi = spec
+        if g >= lo * 0.55:
+            return item_from(query, qty, unit)
+    if catalog:
+        return portion_against_ruler(name, g, catalog)
+    return grams_item(name, g, rng)
 
 
 def build_nutrition5k(limit: int, rng: random.Random, catalog: list[dict]) -> list[dict]:
@@ -1264,8 +1283,10 @@ def build_nutrition5k(limit: int, rng: random.Random, catalog: list[dict]) -> li
             grams = float(ing.get("grams") or 0)
             if not name or grams < 5:
                 continue
+            if grams < 12 and not re.search(r"\boil\b", name):
+                continue
             identified.append(identify_item(name))
-            portioned.append(portion_against_ruler(name, grams, catalog))
+            portioned.append(portion_gold(name, grams, catalog, rng))
         if not portioned:
             continue
         if not sid:

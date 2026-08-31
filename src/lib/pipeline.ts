@@ -1,5 +1,5 @@
 import { extractFoods, isQuickCalorie, refineExtracted } from './extract'
-import { entryFromFood, mapToBaseFood, photoCatalogLines, quickAddEntry, unmatchedEntry } from './foods'
+import { entryFromFood, mapToBaseFood, photoCatalogLines, quickAddEntry, sanitizePhotoItem, unmatchedEntry } from './foods'
 import { uid } from './storage'
 import { estimatePhotoPortions, extractMealPhoto, extractMealText } from './vlm'
 import type { DebugPath, ExtractedItem, LogEntry } from '../types'
@@ -41,6 +41,7 @@ function matchOne(
   item: ExtractedItem,
   date: string,
   source: LogEntry['source'],
+  photoSiblings = 1,
 ): { entry: LogEntry; raw: string; path: DebugPath; error?: string; ms: number } {
   const started = performance.now()
   if (item.caloriesHint && !item.query) {
@@ -69,8 +70,9 @@ function matchOne(
     }
   }
 
+  const portioned = source === 'photo' ? sanitizePhotoItem(resolved, mapped.food, photoSiblings) : resolved
   return {
-    entry: entryFromFood(mapped.food, resolved, source, date),
+    entry: entryFromFood(mapped.food, portioned, source, date),
     raw: mapped.citation,
     path: 'vlm',
     ms: Math.round(performance.now() - started),
@@ -94,7 +96,7 @@ async function resolveItems(
     const item = items[i]
     const pct = 28 + Math.round(((i + 0.2) / n) * 68)
     handlers.onProgress?.({ message: `Looking up USDA for ${item.query}…`, pct })
-    const result = matchOne(meal, item, date, source)
+    const result = matchOne(meal, item, date, source, source === 'photo' ? items.length : 1)
     const entry = stamp(result.entry, {
       batchId,
       input: meal,

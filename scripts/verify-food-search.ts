@@ -9,7 +9,9 @@ import {
   getFood,
   loadFoods,
   mapToBaseFood,
+  photoCatalogLines,
   referenceFitsItem,
+  sanitizePhotoItem,
   searchForItem,
   searchFoods,
   unmatchedEntry,
@@ -690,6 +692,78 @@ const cases: Case[] = [
       return {
         pass: entry.foodId === 'unmatched' && entry.kcal === 0 && /banana/i.test(entry.name),
         got: `${entry.foodId} ${entry.kcal}kcal ${entry.name}`,
+      }
+    },
+  },
+  {
+    name: 'Olive oil maps to a tablespoon, not a cup',
+    run() {
+      const mapped = mapToBaseFood(item('olive oil', { quantity: 1, unit: 'tbsp' }))
+      const entry = mapped
+        ? entryFromFood(mapped.food, item('olive oil', { quantity: 1, unit: 'tbsp' }), 'photo', '2026-08-31')
+        : null
+      const catalog = photoCatalogLines([item('olive oil')]).lines[0] ?? ''
+      const head = catalog.split('|')[0] ?? ''
+      return {
+        pass: Boolean(
+          mapped &&
+            /olive/i.test(mapped.food.name) &&
+            /oil/i.test(mapped.food.name) &&
+            !/mayo|anchovy|tapenade/i.test(mapped.food.name) &&
+            entry &&
+            entry.kcal >= 90 &&
+            entry.kcal <= 160 &&
+            /1 tbsp/i.test(head) &&
+            !/1 cup/i.test(head),
+        ),
+        got: `${mapped?.food.name} ${mapped?.food.serveG}g → ${entry?.grams}g ${entry?.kcal}kcal · ${catalog}`,
+      }
+    },
+  },
+  {
+    name: 'Egg maps to 1 large, not 1 cup of liquid egg',
+    run() {
+      const mapped = mapToBaseFood(item('egg', { quantity: 1, unit: 'large' }))
+      return {
+        pass: Boolean(mapped && mapped.food.serveG >= 40 && mapped.food.serveG <= 70 && /egg/i.test(mapped.food.name)),
+        got: `${mapped?.food.name} ${mapped?.food.serveLabel} ${mapped?.food.serveG}g`,
+      }
+    },
+  },
+  {
+    name: 'Pear maps to raw fruit, not dried pear',
+    run() {
+      const mapped = mapToBaseFood(item('pear', { quantity: 1, unit: 'medium' }))
+      return {
+        pass: Boolean(mapped && /pear/i.test(mapped.food.name) && !/dried/i.test(mapped.food.name)),
+        got: mapped?.food.name ?? 'none',
+      }
+    },
+  },
+  {
+    name: 'Photo sanitizer snaps a 7 g apple to 1 medium',
+    run() {
+      const mapped = mapToBaseFood(item('apple', { quantity: 7, unit: 'g' }))
+      if (!mapped) return { pass: false, got: 'unmatched' }
+      const tiny = entryFromFood(mapped.food, item('apple', { quantity: 7, unit: 'g' }), 'photo', '2026-08-31')
+      const snapped = sanitizePhotoItem(item('apple', { quantity: 7, unit: 'g' }), mapped.food, 1)
+      const entry = entryFromFood(mapped.food, snapped, 'photo', '2026-08-31')
+      return {
+        pass: tiny.kcal < 15 && snapped.unit === 'medium' && entry.kcal >= 70 && entry.kcal <= 130,
+        got: `7g ${tiny.kcal}kcal → ${snapped.quantity} ${snapped.unit} ${entry.kcal}kcal`,
+      }
+    },
+  },
+  {
+    name: 'Photo sanitizer caps 4 tbsp olive oil at 1 tbsp',
+    run() {
+      const mapped = mapToBaseFood(item('olive oil', { quantity: 4, unit: 'tbsp' }))
+      if (!mapped) return { pass: false, got: 'unmatched' }
+      const snapped = sanitizePhotoItem(item('olive oil', { quantity: 4, unit: 'tbsp' }), mapped.food, 4)
+      const entry = entryFromFood(mapped.food, snapped, 'photo', '2026-08-31')
+      return {
+        pass: snapped.quantity === 1 && snapped.unit === 'tbsp' && entry.kcal >= 90 && entry.kcal <= 160,
+        got: `${snapped.quantity} ${snapped.unit} ${entry.grams}g ${entry.kcal}kcal · row ${mapped.food.name}`,
       }
     },
   },

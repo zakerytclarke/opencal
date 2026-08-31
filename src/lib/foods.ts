@@ -1,6 +1,6 @@
 import MiniSearch from 'minisearch'
 import type { ExtractedItem, Food, FoodFile, LogEntry } from '../types'
-import { convertPortion, portionToolLine, scaleNutrition } from './portions'
+import { canonUnit, convertPortion, parseHousehold, portionToolLine, scaleNutrition } from './portions'
 import { uid } from './storage'
 
 let foods: Food[] = []
@@ -100,7 +100,7 @@ function garnishSlice(food: Food, q: string): boolean {
 }
 
 const BARE_PRODUCE =
-  /^(banana|bananas|apple|apples|carrot|carrots|tomato|tomatoes|orange|oranges|onion|onions|cucumber|cucumbers)$/
+  /^(banana|bananas|apple|apples|carrot|carrots|tomato|tomatoes|orange|oranges|onion|onions|cucumber|cucumbers|pear|pears|peach|peaches|pineapple|avocado|avocados|potato|potatoes)$/
 
 function isBareProduceName(name: string): boolean {
   const first = normalize(name.split(',')[0] ?? '')
@@ -144,6 +144,7 @@ export function classifyVisibility(food: Pick<Food, 'name' | 'serveLabel' | 'ser
   const branded = first === first.toUpperCase() && first.length > 3
   if (branded && grams >= 30 && grams <= 650) return 'search'
   if (BRAND_HINT.test(name.toLowerCase()) && grams >= 30 && grams <= 650) return 'search'
+  if (/\boil\b/i.test(name) && grams >= 8 && grams <= 20 && /tbsp|tablespoon/i.test(label)) return 'search'
   if (grams < 28) {
     if (KEEP_SLICE.test(name.toLowerCase()) && /slice|piece/i.test(label) && grams >= 8) return 'search'
     return 'ref'
@@ -182,8 +183,31 @@ function rank(query: string, food: Food, miniScore: number): number {
     score += 32
   }
   if ((q === 'egg' || q === 'eggs') && /white|yolk|noodle|bread|bagel|foo yung|roll/.test(name)) score -= 50
-  if ((q === 'egg' || q === 'eggs') && /whole|scrambled/.test(name)) score += 22
   if (/egg white/.test(q) && /sandwich/.test(name)) score -= 60
+  if (q === 'egg' || q === 'eggs') {
+    if (/pickled|benedict|creamed|duck|goose|foo yung/.test(name)) score -= 50
+    if (food.serveG >= 40 && food.serveG <= 70 && /large|extra large|1 egg/.test(label)) score += 70
+    else if (food.serveG >= 40 && food.serveG <= 70 && /whole|scrambled|^egg$/.test(name)) score += 28
+    if (/1 cup/.test(label) || food.serveG >= 100) score -= 90
+  }
+  if (/\boil\b/.test(q)) {
+    if (/mayonnaise|potato|made with oil|peanut|canola|vegetable|corn/.test(name) && !/olive/.test(name) && /olive/.test(q)) {
+      score -= 40
+    }
+    if (food.serveG >= 8 && food.serveG <= 20 && /tbsp|tablespoon/.test(label)) score += 90
+    else if (food.serveG >= 8 && food.serveG <= 20) score += 55
+    if (food.serveG >= 80) score -= 85
+    if (/mayonnaise/.test(name) && !/mayo/.test(q)) score -= 45
+  }
+  if (/^(pork|chicken|beef|steak|salmon|turkey)$/.test(q)) {
+    if (/\b(bones?|ears?|feet|crackling|snout|tail)\b/.test(name)) score -= 90
+    if (food.serveG >= 70 && food.serveG <= 220) score += 22
+    if (food.serveG <= 35 && /slice/.test(label)) score -= 18
+  }
+  if (!/dried|dehydrated|canned|gratin|syrup|pickled/.test(q)) {
+    if (/\b(dried|dehydrated)\b/.test(name)) score -= 70
+    if (/au gratin|heavy syrup|extra heavy syrup/.test(name)) score -= 55
+  }
   if ((q === 'banana' || q === 'bananas') && /pepper/.test(name)) score -= 60
   if ((q === 'banana' || q === 'bananas') && /\braw\b/.test(name) && food.serveG >= 70) score += 18
   if (BARE_PRODUCE.test(q)) {
@@ -386,12 +410,39 @@ export function candidateLines(
 
 export function searchForItem(item: ExtractedItem, limit = 8): Food[] {
   const q = [item.brand, item.query].filter(Boolean).join(' ')
-  const all = searchFoods(q, Math.max(limit * 4, 24), 'all')
-  const catalog = all.filter((f) => f.visibility === 'search')
-  const refs = all.filter((f) => f.visibility === 'ref')
-  const hits = [...catalog, ...refs].slice(0, limit)
+  const hits = searchFoods(q, limit, 'all')
   if (hits.length || !item.brand) return hits
   return searchForItem({ ...item, brand: null }, limit)
+}
+
+function oilTbspGrams(food: Food): number {
+  const house = parseHousehold(food.serveLabel)
+  if (house && (house.unit === 'tbsp' || house.unit === 'tsp')) {
+    return food.serveG / Math.max(house.qty, 0.01) * (house.unit === 'tsp' ? 3 : 1)
+  }
+  if (house?.ml && house.ml > 0) return food.serveG * (15 / house.ml)
+  if (food.serveG >= 80) return food.serveG / 16
+  return food.serveG
+}
+
+function photoHits(item: ExtractedItem, hitsPerFood: number): Food[] {
+  const hits = searchForItem(item, Math.max(8, hitsPerFood * 3))
+  const q = normalize(item.query)
+  if (/\boil\b/.test(q)) {
+    const oils = hits.filter((h) => {
+      const n = normalize(h.name)
+      if (/anchovy|tapenade|sardine|tuna|fish|potato|mayonnaise/.test(n)) return false
+      return /\boil\b/.test(n)
+    })
+    const olive = /olive/.test(q) ? oils.filter((h) => /olive/.test(normalize(h.name))) : []
+    const picked = (olive.length ? olive : oils).slice(0, hitsPerFood)
+    if (picked.length) return picked
+  }
+  if (/^(egg|eggs)$/.test(q)) {
+    const large = hits.filter((h) => h.serveG >= 40 && h.serveG <= 70)
+    if (large.length) return large.slice(0, hitsPerFood)
+  }
+  return hits.slice(0, hitsPerFood)
 }
 
 /** USDA household servings for the photo portion step (visual ruler, not convert_portion). */
@@ -400,18 +451,58 @@ export function photoCatalogLines(items: ExtractedItem[], hitsPerFood = 3): { na
   const lines: string[] = []
   for (const item of items) {
     if (!item.query) continue
-    const hits = searchForItem(item, hitsPerFood)
+    const hits = photoHits(item, hitsPerFood)
     if (!hits.length) {
       lines.push(`- ${item.query}: (no USDA row)`)
       continue
     }
     const bits = hits.map((food, i) => {
       const letter = String.fromCharCode(65 + i)
+      const oil = /\boil\b/.test(normalize(item.query)) || /\boil\b/.test(normalize(food.name))
+      if (oil) {
+        return `${letter}. ${food.name} · USDA 1 tbsp (${Math.round(oilTbspGrams(food))} g)`
+      }
       return `${letter}. ${food.name} · USDA ${food.serveLabel} (${Math.round(food.serveG)} g)`
     })
     lines.push(`- ${item.query}: ${bits.join(' | ')}`)
   }
   return { names, lines }
+}
+
+const PHOTO_WHOLE =
+  /^(apples?|bananas?|oranges?|pears?|peaches?|avocados?|bagels?|muffins?)$/
+
+/**
+ * Photo VLMs collapse to 7 g / 4 tbsp. Snap implausible household amounts
+ * after USDA map; calories still come from convert_portion.
+ */
+export function sanitizePhotoItem(item: ExtractedItem, food: Food, siblingCount = 1): ExtractedItem {
+  const q = normalize(item.query)
+  const unit = canonUnit(item.unit)
+  const name = normalize(food.name)
+  const qty = Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1
+
+  if (/\boil\b/.test(q) || /\boil\b/.test(name)) {
+    if (unit === 'tbsp' && qty > 1) return { ...item, quantity: 1, unit: 'tbsp' }
+    if (unit === 'tsp' && qty > 3) return { ...item, quantity: 1, unit: 'tbsp' }
+    if ((unit === 'g' || unit === 'ml') && qty > 18) return { ...item, quantity: 1, unit: 'tbsp' }
+    if (!unit || unit === 'cup' || unit === 'medium' || unit === 'large' || unit === 'serving') {
+      return { ...item, quantity: 1, unit: 'tbsp' }
+    }
+    return item
+  }
+
+  if (PHOTO_WHOLE.test(q) && (unit === 'piece' || unit === 'pcs' || unit === 'item') && qty > 1.5) {
+    return { ...item, quantity: 1, unit: 'medium' }
+  }
+
+  if (siblingCount <= 2 && PHOTO_WHOLE.test(q) && (unit === 'g' || unit === 'gram') && qty < 50) {
+    return { ...item, quantity: 1, unit: 'medium' }
+  }
+  if (siblingCount <= 2 && /^(eggs?)$/.test(q) && (unit === 'g' || unit === 'gram' || !unit) && qty < 40) {
+    return { ...item, quantity: 1, unit: 'large' }
+  }
+  return item
 }
 
 /** Brand / grande cues from the meal or extract, applied on MiniSearch hits. */

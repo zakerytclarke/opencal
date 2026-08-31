@@ -46,6 +46,18 @@ NOISE = {
     "breakfast",
     "mayonnaise",
     "dressing",
+    "dried",
+    "dehydrated",
+    "bone",
+    "bones",
+    "ear",
+    "ears",
+    "gratin",
+    "pickled",
+    "syrup",
+    "benedict",
+    "crackling",
+    "powder",
 }
 
 _TOKEN = re.compile(r"[a-z0-9]+")
@@ -73,6 +85,7 @@ def search_foods(foods: list[dict[str, Any]], query: str, k: int = 3) -> list[di
     if not qtoks:
         return []
     oil = "oil" in qtoks
+    egg = qtoks == ["egg"] or qtoks == ["eggs"]
     scored: list[tuple[float, dict[str, Any]]] = []
     for food in foods:
         name = food.get("name") or ""
@@ -100,6 +113,7 @@ def search_foods(foods: list[dict[str, Any]], query: str, k: int = 3) -> list[di
         if food.get("visibility") == "search":
             score += 4
         serve = float(food.get("serveG") or 0)
+        label = (food.get("serveLabel") or "").lower()
         if serve >= 40:
             score += 6
         elif serve and serve < 12:
@@ -111,6 +125,24 @@ def search_foods(foods: list[dict[str, Any]], query: str, k: int = 3) -> list[di
                 score += 32
             elif serve >= 80:
                 score -= 18
+            if re.search(r"mayonnaise|potato|peanut|canola|vegetable|corn", name, re.I) and "olive" in q and "olive" not in name.lower():
+                score -= 24
+        if egg:
+            if 40 <= serve <= 70 and re.search(r"large|1 egg", label):
+                score += 40
+            if serve >= 100 or "cup" in label:
+                score -= 36
+            if re.search(r"pickled|benedict|creamed|duck|goose", name, re.I):
+                score -= 28
+        if re.search(r"\b(dried|dehydrated|au gratin|heavy syrup)\b", name, re.I) and not re.search(
+            r"dried|dehydrated|gratin|syrup", q
+        ):
+            score -= 22
+        if qtoks[0] in {"pork", "chicken", "beef", "steak", "salmon", "turkey"}:
+            if re.search(r"\b(bones?|ears?|feet|crackling)\b", name, re.I):
+                score -= 40
+            if 70 <= serve <= 220:
+                score += 12
         scored.append((score, food))
     scored.sort(key=lambda x: -x[0])
     out: list[dict[str, Any]] = []
@@ -132,7 +164,26 @@ def catalog_lines(foods: list[dict[str, Any]], names: list[str], k: int = 3) -> 
         name = (name or "").strip()
         if not name:
             continue
-        hits = search_foods(foods, name, k)
+        hits = search_foods(foods, name, max(k * 3, 8))
+        q = name.lower()
+        if "oil" in q:
+            oils = [
+                h
+                for h in hits
+                if re.search(r"\boil\b", h.get("name") or "", re.I)
+                and not re.search(r"anchovy|tapenade|sardine|tuna|fish|potato|mayonnaise", h.get("name") or "", re.I)
+            ]
+            if "olive" in q:
+                olive = [h for h in oils if re.search(r"olive", h.get("name") or "", re.I)]
+                if olive:
+                    oils = olive
+            if oils:
+                hits = oils
+        if q in {"egg", "eggs"}:
+            large = [h for h in hits if 40 <= float(h.get("serveG") or 0) <= 70]
+            if large:
+                hits = large
+        hits = hits[:k]
         if not hits:
             lines.append(f"- {name}: (no USDA row)")
             continue
@@ -140,7 +191,11 @@ def catalog_lines(foods: list[dict[str, Any]], names: list[str], k: int = 3) -> 
         for i, food in enumerate(hits):
             letter = chr(65 + i)
             label = food.get("serveLabel") or "serving"
-            grams = int(round(float(food.get("serveG") or 0)))
-            bits.append(f"{letter}. {food.get('name')} · USDA {label} ({grams} g)")
+            grams = float(food.get("serveG") or 0)
+            if "oil" in q:
+                if grams >= 80:
+                    grams = grams / 16.0
+                label = "1 tbsp"
+            bits.append(f"{letter}. {food.get('name')} · USDA {label} ({int(round(grams))} g)")
         lines.append(f"- {name}: " + " | ".join(bits))
     return lines

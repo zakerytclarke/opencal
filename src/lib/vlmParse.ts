@@ -44,6 +44,7 @@ Reply with JSON only, never a caption:
 name is a short grocery name. brand is a readable package or logo, else null.
 Do not output quantity, unit, grams, or calories. The host looks up USDA rows next, then a second step estimates portions.
 Split a mixed plate into the foods you can see (chicken, rice, broccoli, olive oil), not one generic "bowl" or "salad".
+Always name the dense items: meat, pasta, rice, pizza, cheese, and any oil or dressing you can see.
 Dressings, oils, and sauces count if you can see them.
 Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not invent sides that are not in the photo.`
 
@@ -58,6 +59,8 @@ Rules:
 - One object per visible food. Keep the grocery name; copy brand from a package if you see one.
 - quantity is a number. unit is g, oz, cup, tbsp, tsp, slice, medium, large, small, piece, serving, or bar.
 - Prefer grams when the pile is a scoop, shred, or mixed bowl. Use 1 medium / 1 large / 1 slice for a whole fruit, egg, or pizza slice that matches the USDA serving size.
+- A whole apple, banana, orange, or egg is never 7 g. Emit 1 medium or 1 large.
+- Oil and dressing are 1 tsp or 1 tbsp (a drizzle), never cups and never 4 tablespoons.
 - A handful of almonds is not 12 servings. Compare the pile to the listed USDA grams.
 - Do not invent calories or pick a catalog letter. convert_portion on the host turns quantity and unit into grams and macros.
 - Skip plates and utensils.`
