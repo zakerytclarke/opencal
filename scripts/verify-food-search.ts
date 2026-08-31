@@ -382,7 +382,7 @@ const cases: Case[] = [
     name: 'Pick JSON selects turkey bacon row B',
     run() {
       const hits = searchForItem(item('turkey bacon'), 6)
-      const rows = candidateLines(hits)
+      const rows = candidateLines(hits, item('turkey bacon', { quantity: 2, unit: 'slice' }))
       const turkeyIdx = rows.findIndex((r) => /turkey bacon, cooked$/i.test(r.food.name))
       const letter = String.fromCharCode(65 + Math.max(0, turkeyIdx))
       const pick = parsePick(
@@ -391,7 +391,7 @@ const cases: Case[] = [
       )
       const food = pick.index != null ? rows[pick.index].food : null
       return {
-        pass: food != null && /turkey bacon, cooked/i.test(food.name) && pick.quantity === 2 && pick.unit === 'slice',
+        pass: food != null && /turkey bacon, cooked/i.test(food.name) && pick.quantity === 2 && pick.unit === 'slice' && /convert_portion/.test(rows[0]?.line ?? ''),
         got: `pick ${letter} → ${food?.name ?? 'none'} · ${pick.quantity} ${pick.unit}`,
       }
     },

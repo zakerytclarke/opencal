@@ -1,5 +1,6 @@
 import MiniSearch from 'minisearch'
 import type { ExtractedItem, Food, FoodFile, LogEntry } from '../types'
+import { convertPortion, portionToolLine, scaleNutrition } from './portions'
 import { uid } from './storage'
 
 let foods: Food[] = []
@@ -293,32 +294,7 @@ export function bestMatch(query: string): Food | null {
   return null
 }
 
-const UNIT_GRAMS: Record<string, number> = {
-  g: 1,
-  gram: 1,
-  grams: 1,
-  kg: 1000,
-  oz: 28.3495,
-  ounce: 28.3495,
-  ounces: 28.3495,
-  lb: 453.592,
-  lbs: 453.592,
-  pound: 453.592,
-  pounds: 453.592,
-  tbsp: 15,
-  tablespoon: 15,
-  tablespoons: 15,
-  tsp: 5,
-  teaspoon: 5,
-  teaspoons: 5,
-  ml: 1,
-  milliliter: 1,
-  milliliters: 1,
-  l: 1000,
-  liter: 1000,
-}
-
-/** Whole produce counted as 1 medium, not a 6 g FNDDS garnish slice. */
+/** USDA / FNDDS medium-item weights when the row is a 2–20 g garnish slice. */
 function wholeItemGrams(food: Food): number {
   const name = normalize(food.name)
   if (/banana/.test(name) && !/chip|split|nectar|pudding|pepper/.test(name)) return 118
@@ -331,57 +307,30 @@ function wholeItemGrams(food: Food): number {
   return Math.max(80, food.serveG * 12)
 }
 
-function gramsFor(food: Food, item: ExtractedItem): number {
-  const unit = item.unit
+function wholeProduceGrams(food: Food, item: ExtractedItem): number | undefined {
   const garnish =
     isProduceGarnishRow(food) && !userAskedSmallBit(item)
       ? true
       : garnishSlice(food, [item.query, item.unit, item.raw].filter(Boolean).join(' '))
+  if (!garnish) return undefined
+  const unit = (item.unit ?? '').toLowerCase()
   if (
-    garnish &&
-    (!unit ||
-      ['small', 'medium', 'large', 'extra large', 'each', 'item', 'items', 'slice', 'slices', 'piece', 'pieces', 'whole'].includes(
-        unit,
-      ))
+    unit &&
+    !['small', 'medium', 'large', 'extra large', 'each', 'item', 'items', 'slice', 'slices', 'piece', 'pieces', 'whole'].includes(
+      unit,
+    )
   ) {
-    const factor = unit === 'small' ? 0.75 : unit === 'large' || unit === 'extra large' ? 1.25 : 1
-    return wholeItemGrams(food) * item.quantity * factor
+    return undefined
   }
-  if (!unit) {
-    return food.serveG * item.quantity
-  }
-  if (unit in UNIT_GRAMS) {
-    return UNIT_GRAMS[unit] * item.quantity
-  }
-  const label = `${food.serveLabel} ${food.name}`.toLowerCase()
-  if (label.includes(unit) || unit === 'serving' || unit === 'servings') {
-    return food.serveG * item.quantity
-  }
-  if (unit === 'cup' || unit === 'cups') {
-    if (label.includes('cup')) return food.serveG * item.quantity
-    return 240 * item.quantity
-  }
-  if (['slice', 'slices', 'piece', 'pieces', 'item', 'items', 'each'].includes(unit)) {
-    return food.serveG * item.quantity
-  }
-  if (['bowl', 'bowls', 'plate', 'plates', 'glass', 'glasses', 'can', 'cans', 'bottle', 'bottles', 'handful', 'scoop', 'scoops', 'bar', 'bars'].includes(unit)) {
-    return food.serveG * item.quantity
-  }
-  if (['small', 'medium', 'large', 'extra large'].includes(unit)) {
-    const factor = unit === 'small' ? 0.75 : unit === 'large' || unit === 'extra large' ? 1.25 : 1
-    return food.serveG * item.quantity * factor
-  }
-  return food.serveG * item.quantity
+  return wholeItemGrams(food)
+}
+
+function portionFor(food: Food, item: ExtractedItem) {
+  return convertPortion(food, item, { wholeProduceGrams: wholeProduceGrams(food, item) })
 }
 
 export function scaleFood(food: Food, grams: number): Pick<LogEntry, 'kcal' | 'protein' | 'carbs' | 'fat'> {
-  const f = grams / 100
-  return {
-    kcal: Math.round(food.kcal * f),
-    protein: Math.round(food.protein * f * 10) / 10,
-    carbs: Math.round(food.carbs * f * 10) / 10,
-    fat: Math.round(food.fat * f * 10) / 10,
-  }
+  return scaleNutrition(food, grams)
 }
 
 /** Diary label from what the user typed, spoke, or the photo named. */
@@ -401,11 +350,17 @@ export function foodBrand(name: string): string | null {
   return null
 }
 
-export function candidateLines(hits: Food[]): { key: string; food: Food; line: string }[] {
+export function candidateLines(
+  hits: Food[],
+  item?: ExtractedItem,
+): { key: string; food: Food; line: string }[] {
   return hits.slice(0, 8).map((food, i) => {
     const key = String.fromCharCode(65 + i)
     const brand = foodBrand(food.name)
-    const line = `${key}. ${food.name}${brand ? ` · brand ${brand}` : ''} · serving ${food.serveLabel} (${Math.round(food.serveG)} g)`
+    const converted = item
+      ? portionToolLine(food, item, portionFor(food, item))
+      : `USDA ${food.serveLabel} (${Math.round(food.serveG)} g)`
+    const line = `${key}. ${food.name}${brand ? ` · brand ${brand}` : ''} · ${converted}`
     return { key, food, line }
   })
 }
@@ -426,7 +381,7 @@ export function entryFromFood(
   source: LogEntry['source'],
   date: string,
 ): LogEntry {
-  const grams = Math.max(1, Math.round(gramsFor(food, item)))
+  const grams = Math.max(1, Math.round(portionFor(food, item).grams))
   const macros = scaleFood(food, grams)
   const servings = Math.round((grams / food.serveG) * 100) / 100
   return {

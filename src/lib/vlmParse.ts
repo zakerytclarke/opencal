@@ -20,10 +20,10 @@ Rules:
 - One object per distinct edible item. Split combos (chicken bowl with rice → chicken, rice).
 - name is a short grocery name.
 - brand is only set if the user or package named one, else null.
-- quantity is a number. unit is the closest household serving: large, medium, small, slice, cup, tbsp, tsp, oz, g, bowl, handful, can, bottle.
+- quantity is a number. unit is the household word the user said: large, medium, small, slice, cup, tbsp, tsp, oz, g, fl oz, bowl, handful, can, bottle, grande, tall, bar.
 - Fruit, drinks, snacks, and cooked dishes all count. Skip plates and utensils.
 - Only foods the user named. Never copy foods from examples.
-- Do not invent calorie numbers.`
+- Do not convert units, estimate grams, or invent calories. convert_portion and scale_nutrition run after a USDA row is picked.`
 
 export const EXTRACT_PREFIX = '{"foods":['
 
@@ -40,25 +40,26 @@ export const PHOTO_EXTRACT_SYSTEM = `You extract every edible item clearly visib
 Reply with JSON only:
 {"foods":[{"name":"apple","brand":null,"quantity":1,"unit":"medium"}]}
 Count each piece of fruit or egg you see. A bunch still attached is that many items, not one bunch.
+Use household units (medium, slice, cup, bar). Do not estimate grams or calories.
 Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not invent sides that are not in the photo.`
 
-export const PHOTO_EXTRACT_USER = 'What foods are in this photo? Estimate portions.'
+export const PHOTO_EXTRACT_USER = 'What foods are in this photo? Count items and name household units. Do not estimate grams or calories.'
 
-export const PICK_SYSTEM = `You pick a local-database reference row for nutrition only.
-The diary will keep the user's name, brand, quantity, and unit. Do not change the portion.
-You are given the user's meal, this item, and lettered hits with their serving size.
+export const PICK_SYSTEM = `You pick a local USDA nutrition reference row.
+Calories and grams are already computed by convert_portion from USDA per-100 g values and household weights. Do not invent numbers or change the portion.
+You are given the user's meal, this item, and lettered hits. Each hit includes convert_portion for this item's quantity and unit.
 Reply with JSON only:
 {"pick":"A","name":"Oatmeal, cooked"}
 Rules:
 - pick is the letter of the closest nutrition reference, or null if none match.
-- name is the chosen row's name. Do not output quantity or unit.
+- name is the chosen row's name. Do not output quantity, unit, grams, or calories.
 - Prefer everyday cooked/raw foods over baby food, ingredients, or odd variants.
 - Prefer a typical whole-food serving (medium fruit, large egg, slice of pizza) over a 2–20 g garnish slice, juice fl oz, or "topping from" row unless the user said slice/oz of that item.`
 
 export const PICK_PREFIX = '{"pick":'
 
 export function extractUserPrompt(meal: string): string {
-  return `Extract foods and estimated servings from this meal:\n${meal}`
+  return `Extract foods and household units from this meal. Do not convert units or invent calories.\n${meal}`
 }
 
 export function pickUserPrompt(opts: {
@@ -71,10 +72,10 @@ export function pickUserPrompt(opts: {
   return [
     `Meal: ${opts.meal}`,
     `Item: ${opts.item.query}${brand}${portion ? `, about ${portion}` : ''}`,
-    'Database hits:',
+    'Database hits (USDA reference + convert_portion for this item):',
     ...opts.lines,
     'None. no match',
-    'Pick the closest nutrition reference letter. Keep the user name, brand, and portion.',
+    'Pick the closest nutrition reference letter. Keep the user name, brand, and portion. Do not output grams or calories.',
   ].join('\n')
 }
 

@@ -79,7 +79,7 @@ async function matchOne(
     }
   }
 
-  const rows = candidateLines(hits)
+  const rows = candidateLines(hits, item)
   onProgress?.({ message: `Matching ${item.query}…`, pct: 0 })
   const picked = await pickFoodMatch(
     meal,

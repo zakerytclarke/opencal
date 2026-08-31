@@ -2,7 +2,8 @@
 /// <reference types="vite-plugin-pwa/client" />
 
 import type { AnalyzeResult, VlmStatus } from './lib/vlm'
-import type { ExtractedItem } from './types'
+import type { PortionResult } from './lib/portions'
+import type { ExtractedItem, Food } from './types'
 import type { PickDecision } from './lib/vlmParse'
 
 declare global {
@@ -17,6 +18,11 @@ declare global {
         item: ExtractedItem,
         lines: string[],
       ) => Promise<{ decision: PickDecision; raw: string; ms: number; error?: string }>
+      convertPortion: (
+        food: Food,
+        item: Pick<ExtractedItem, 'quantity' | 'unit'>,
+        opts?: { wholeProduceGrams?: number },
+      ) => PortionResult
       analyzeMealText: (text: string) => Promise<AnalyzeResult>
       analyzeMealPhoto: (image: Blob) => Promise<AnalyzeResult>
       isVlmReady: () => boolean

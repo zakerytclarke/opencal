@@ -125,8 +125,10 @@ export function SettingsSheet({ profile, onClose, onResetOnboarding, onDeleteLog
         </ul>
         <p className="settings-cite">
           Search shows everyday names and household servings. Voice and photo matching can also use the full USDA
-          reference set, including lab and garnish rows. A few restaurant items use typical published values. Each logged
-          food has an info link to its USDA record when one exists.
+          reference set, including lab and garnish rows. Portions are converted with NIST mass, FDA cup and tablespoon
+          volumes, and USDA household weights; calories always come from that row's USDA per-100 g values. A few
+          restaurant items use typical published values. Each logged food has an info link to its USDA record when one
+          exists.
         </p>
       </section>
 

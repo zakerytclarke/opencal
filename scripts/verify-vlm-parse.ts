@@ -1,5 +1,5 @@
 import { extractFoods, isQuickCalorie, refineExtracted } from '../src/lib/extract.ts'
-import { formatChatPrompt, parseExtractedFoods, parsePick } from '../src/lib/vlmParse.ts'
+import { EXTRACT_SYSTEM, PICK_SYSTEM, formatChatPrompt, parseExtractedFoods, parsePick } from '../src/lib/vlmParse.ts'
 
 type Row = {
   id: number
@@ -418,6 +418,38 @@ const rows: Row[] = [
         this.input,
       )
       return { pass: items[0]?.unit === 'grande', got: foodsLine(items) }
+    },
+  },
+  {
+    id: 30,
+    kind: 'text',
+    name: 'Extract prompt forbids invented grams and calories',
+    input: EXTRACT_SYSTEM,
+    expect: 'convert_portion · no invented calories',
+    run() {
+      const s = EXTRACT_SYSTEM
+      return {
+        pass:
+          /convert_portion/.test(s) &&
+          /scale_nutrition/.test(s) &&
+          /do not convert units/i.test(s) &&
+          /invent calories/i.test(s),
+        got: /convert_portion/.test(s) ? 'tools named' : 'missing tools',
+      }
+    },
+  },
+  {
+    id: 31,
+    kind: 'text',
+    name: 'Pick prompt uses convert_portion and forbids calorie output',
+    input: PICK_SYSTEM,
+    expect: 'convert_portion already ran',
+    run() {
+      const s = PICK_SYSTEM
+      return {
+        pass: /convert_portion/.test(s) && /do not invent numbers/i.test(s) && /do not output quantity, unit, grams, or calories/i.test(s),
+        got: /convert_portion/.test(s) ? 'tools named' : 'missing tools',
+      }
     },
   },
 ]

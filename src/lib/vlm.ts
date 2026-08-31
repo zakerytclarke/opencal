@@ -1,4 +1,5 @@
 import { extractFoods } from './extract'
+import { convertPortion } from './portions'
 import type { DebugPath, ExtractedItem } from '../types'
 import {
   EXTRACT_FEWSHOT,
@@ -347,6 +348,7 @@ if (typeof window !== 'undefined') {
       extractMealText,
       extractMealPhoto,
       pickFoodMatch,
+      convertPortion,
       analyzeMealText,
       analyzeMealPhoto,
       isVlmReady,
