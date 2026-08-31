@@ -294,6 +294,25 @@ export function bestMatch(query: string): Food | null {
   return null
 }
 
+/** True if the USDA row is the same food, not a near-miss (chips for banana, pepper for banana). */
+export function referenceFitsItem(item: ExtractedItem, food: Food): boolean {
+  const q = normalize(item.query)
+  if (!q) return false
+  const name = normalize(food.name)
+  const blob = `${name} ${(food.aliases ?? []).map(normalize).join(' ')}`
+  const other =
+    /\b(chips?|pepper|peppers|nectar|dehydrated|juice|oil|bread|cake|pudding|split|powder|sauce|candy|candied)\b/
+  const qToks = q.split(/\s+/).filter(Boolean)
+  if (qToks.length === 1 && other.test(blob) && !other.test(q)) {
+    const first = name.split(',')[0]?.trim() ?? name
+    const tok = qToks[0]
+    const tokS = tok.endsWith('s') && tok.length > 4 ? tok.slice(0, -1) : tok
+    const firstS = first.endsWith('s') && first.length > 4 ? first.slice(0, -1) : first
+    if (firstS !== tokS) return false
+  }
+  return rank(item.query, food, 10) >= 36
+}
+
 /** USDA / FNDDS medium-item weights when the row is a 2–20 g garnish slice. */
 function wholeItemGrams(food: Food): number {
   const name = normalize(food.name)

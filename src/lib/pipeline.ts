@@ -1,5 +1,5 @@
 import { extractFoods, isQuickCalorie, refineExtracted } from './extract'
-import { candidateLines, entryFromFood, quickAddEntry, searchForItem, unmatchedEntry } from './foods'
+import { candidateLines, entryFromFood, quickAddEntry, referenceFitsItem, searchForItem, unmatchedEntry } from './foods'
 import { uid } from './storage'
 import { extractMealPhoto, extractMealText, pickFoodMatch } from './vlm'
 import type { DebugPath, ExtractedItem, Food, LogEntry } from '../types'
@@ -109,7 +109,7 @@ async function matchOne(
 
   const food = preferReference(item, pickedFood, hits, meal)
 
-  if (!food) {
+  if (!food || !referenceFitsItem(item, food)) {
     return {
       entry: unmatchedEntry(resolved, source, date),
       raw: picked.raw,

@@ -8,6 +8,7 @@ import {
   foodSourceUrl,
   getFood,
   loadFoods,
+  referenceFitsItem,
   searchForItem,
   searchFoods,
   unmatchedEntry,
@@ -601,6 +602,24 @@ const cases: Case[] = [
       return {
         pass: foodSourceLabel('branded-534358') === 'USDA Branded' && url === 'https://fdc.nal.usda.gov/food-details/534358/nutrients',
         got: `${foodSourceLabel('branded-534358')} · ${url}`,
+      }
+    },
+  },
+  {
+    name: 'Banana fruit row fits banana; chips and pepper do not',
+    run() {
+      const fruit = searchFoods('banana', 8).find((f) => /^bananas?, raw$/i.test(f.name) || /^banana$/i.test(f.name))
+      const chips = searchFoods('banana chips', 6)[0]
+      const pepper = searchFoods('banana pepper', 6)[0]
+      const banana = item('banana', { quantity: 1, unit: 'medium' })
+      const pepperItem = item('banana pepper', { quantity: 1, unit: null })
+      const fruitOk = fruit ? referenceFitsItem(banana, fruit) : false
+      const chipsOk = chips ? referenceFitsItem(banana, chips) : true
+      const pepperAsBanana = pepper ? referenceFitsItem(banana, pepper) : true
+      const pepperOk = pepper ? referenceFitsItem(pepperItem, pepper) : false
+      return {
+        pass: fruitOk && !chipsOk && !pepperAsBanana && pepperOk,
+        got: `fruit=${fruitOk} chips=${chipsOk} pepper-as-banana=${pepperAsBanana} pepper=${pepperOk} · ${fruit?.name}/${chips?.name}/${pepper?.name}`,
       }
     },
   },

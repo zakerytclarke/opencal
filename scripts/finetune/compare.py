@@ -191,9 +191,11 @@ def main() -> None:
             f"| USDA kcal in range | {pct(coach_b['kcalInRange'])} | {pct(coach_a['kcalInRange'])} | {delta(coach_b['kcalInRange'], coach_a['kcalInRange'])} |",
             "",
             "Eval infer uses the same `{\"foods\":[` assistant prefix as the PWA.",
+            "Text MAE applies the same refineExtracted host pass as the PWA (bare eggs → large, compound names).",
             "`fix-eggs` gold is 2 large eggs (185 kcal) while the photo is a mixed plate;",
-            "the model now emits JSON for egg, avocado, spinach, and bread, which inflates image MAE vs that eggs-only label.",
+            "the model emits JSON for egg plus sides, which inflates image MAE vs that eggs-only label.",
             "Banana photo counts 5 and matches 525 kcal. Text MAE is the cleaner calorie signal.",
+            "If the USDA fruit banana row is missing from hits, the host refuses chips/pepper near-misses (0 kcal unmatched).",
         ]
     pick_after = ROOT / "evals/data/finetune/preds/finetuned/pick.json"
     if pick_after.exists():

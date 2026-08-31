@@ -19,24 +19,24 @@ Calories are MiniSearch + convert_portion on the model's extract (USDA per-100 g
 
 ### Fine-tuned (n=18)
 - Food name accuracy: 100.0%
-- Calorie MAE: 53.6 kcal (median 0.0)
-- Calorie MAPE: 31.7% · within 20%: 88.9% · within 50%: 88.9%
-- Calorie MAE when named correctly: 53.6
+- Calorie MAE: 42.7 kcal (median 0.0)
+- Calorie MAPE: 22.7% · within 20%: 94.4% · within 50%: 94.4%
+- Calorie MAE when named correctly: 42.7
 
 | metric | baseline | fine-tuned | change |
 |---|---:|---:|---|
 | name acc | 77.8% | 100.0% | +22.2 pp (improved) |
-| kcal MAE | 102.2 | 53.6 | -48.6 (improved) |
+| kcal MAE | 102.2 | 42.7 | -59.5 (improved) |
 | kcal median AE | 47.5 | 0.0 | -47.5 (improved) |
-| within 20% | 50.0% | 88.9% | +38.9 pp (improved) |
-| within 50% | 72.2% | 88.9% | +16.7 pp (improved) |
+| within 20% | 50.0% | 94.4% | +44.4 pp (improved) |
+| within 50% | 72.2% | 94.4% | +22.2 pp (improved) |
 
 v1 vs this run (same held-out split):
 
 | metric | v1 | this run | change |
 |---|---:|---:|---|
 | name acc | 88.9% | 100.0% | +11.1 pp (improved) |
-| kcal MAE | 65.8 | 53.6 | -12.2 (improved) |
+| kcal MAE | 65.8 | 42.7 | -23.1 (improved) |
 
 ## Text vs images
 
@@ -52,9 +52,9 @@ v1 vs this run (same held-out split):
 - Calorie MAE when named correctly: 14.7
 ### Fine-tuned text (n=16)
 - Food name accuracy: 100.0%
-- Calorie MAE: 5.6 kcal (median 0.0)
-- Calorie MAPE: 6.1% · within 20%: 93.8% · within 50%: 93.8%
-- Calorie MAE when named correctly: 5.6
+- Calorie MAE: 1.4 kcal (median 0.0)
+- Calorie MAPE: 0.4% · within 20%: 100.0% · within 50%: 100.0%
+- Calorie MAE when named correctly: 1.4
 ### Baseline images (n=2)
 - Food name accuracy: 0.0%
 - Calorie MAE: 355.0 kcal (median 355.0)
@@ -67,9 +67,9 @@ v1 vs this run (same held-out split):
 - Calorie MAE when named correctly: 420.0
 ### Fine-tuned images (n=2)
 - Food name accuracy: 100.0%
-- Calorie MAE: 437.5 kcal (median 437.5)
-- Calorie MAPE: 236.5% · within 20%: 50.0% · within 50%: 50.0%
-- Calorie MAE when named correctly: 437.5
+- Calorie MAE: 373.0 kcal (median 373.0)
+- Calorie MAPE: 201.6% · within 20%: 50.0% · within 50%: 50.0%
+- Calorie MAE when named correctly: 373.0
 
 ## Coach (don't forget how to talk)
 
@@ -81,6 +81,14 @@ v1 vs this run (same held-out split):
 | USDA kcal in range | 0.0% | 100.0% | +100.0 pp (improved) |
 
 Eval infer uses the same `{"foods":[` assistant prefix as the PWA.
+Text MAE applies the same refineExtracted host pass as the PWA (bare eggs → large, compound names).
 `fix-eggs` gold is 2 large eggs (185 kcal) while the photo is a mixed plate;
-the model now emits JSON for egg, avocado, spinach, and bread, which inflates image MAE vs that eggs-only label.
+the model emits JSON for egg plus sides, which inflates image MAE vs that eggs-only label.
 Banana photo counts 5 and matches 525 kcal. Text MAE is the cleaner calorie signal.
+If the USDA fruit banana row is missing from hits, the host refuses chips/pepper near-misses (0 kcal unmatched).
+
+## Pick / refuse (RAG)
+
+Held-out `evals/splits/pick.json`: 2/5 correct.
+Refuse when the true USDA row is missing: 0/3.
+Calories are never taken from the model; pick-null leaves the diary unmatched (0 kcal).

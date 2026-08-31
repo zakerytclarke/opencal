@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupLocalFoods } from './setup.ts'
+import { refineExtracted } from '../../src/lib/extract.ts'
 import { goldMealKcal } from './gold.ts'
 import { formatSummary, scoreCase, summarize } from './metrics.ts'
 import { entryFromFood, searchForItem } from '../../src/lib/foods.ts'
@@ -49,13 +50,16 @@ for (const row of extracts) {
   if (row.modality === 'text') {
     const gold = textById.get(row.id)
     if (!gold) continue
-    const items: ExtractedItem[] = (row.items ?? []).map((it) => ({
-      raw: row.raw ?? '',
-      query: (it.query || it.name || '').trim(),
-      brand: it.brand ?? null,
-      quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
-      unit: it.unit ?? null,
-    }))
+    const items: ExtractedItem[] = refineExtracted(
+      (row.items ?? []).map((it) => ({
+        raw: row.raw ?? '',
+        query: (it.query || it.name || '').trim(),
+        brand: it.brand ?? null,
+        quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
+        unit: it.unit ?? null,
+      })),
+      gold.text,
+    )
     const entries = items
       .filter((i) => i.query)
       .map((item) => {
@@ -126,7 +130,7 @@ const summary = { text: summarize(by.text), image: summarize(by.image), all: sum
 const report = [
   `# OpenCal extract→USDA eval · ${tag} · ${new Date().toISOString()}`,
   '',
-  'Extracts from the VLM, calories from MiniSearch + convert_portion (no pick VLM).',
+  'Extracts from the VLM, calories from MiniSearch + convert_portion (no pick VLM). Text scoring applies the same refineExtracted host pass as the PWA.',
   '',
   formatSummary('Text', summary.text),
   formatSummary('Images', summary.image),
