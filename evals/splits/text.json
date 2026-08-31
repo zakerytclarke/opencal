@@ -123,12 +123,12 @@
     {
       "id": "test-kind-bar",
       "text": "a KIND protein bar",
-      "expect": [{ "aliases": ["kind"], "query": "kind bar", "quantity": 1, "unit": "bar" }]
+      "expect": [{ "aliases": ["kind bar"], "query": "kind bar", "quantity": 1, "unit": "bar" }]
     },
     {
       "id": "test-chipotle-bowl",
       "text": "Chipotle chicken bowl",
-      "expect": [{ "aliases": ["chipotle", "chicken"], "query": "chipotle chicken bowl", "quantity": 1, "unit": "bowl" }]
+      "expect": [{ "aliases": ["chipotle chicken"], "query": "chipotle chicken bowl", "quantity": 1, "unit": "bowl" }]
     },
     {
       "id": "test-greek-yogurt",

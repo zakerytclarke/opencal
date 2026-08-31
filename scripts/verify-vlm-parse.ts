@@ -1,4 +1,4 @@
-import { extractFoods, isQuickCalorie } from '../src/lib/extract.ts'
+import { extractFoods, isQuickCalorie, refineExtracted } from '../src/lib/extract.ts'
 import { formatChatPrompt, parseExtractedFoods, parsePick } from '../src/lib/vlmParse.ts'
 
 type Row = {
@@ -304,6 +304,65 @@ const rows: Row[] = [
           items[2].brand === 'Chobani',
         got,
       }
+    },
+  },
+  {
+    id: 23,
+    kind: 'text',
+    name: 'Drop pizza/coke leak from a turkey-bacon meal',
+    input: '3 slices of turkey bacon',
+    expect: '3 slices turkey bacon',
+    run() {
+      const items = refineExtracted(
+        [
+          { raw: this.input, query: 'turkey bacon', quantity: 1, unit: 'slice' },
+          { raw: this.input, query: 'pepperoni pizza', quantity: 1, unit: 'slice' },
+          { raw: this.input, query: 'coke', quantity: 1, unit: 'can' },
+        ],
+        this.input,
+      )
+      const got = foodsLine(items)
+      return {
+        pass: items.length === 1 && items[0].quantity === 3 && /turkey bacon/i.test(items[0].query),
+        got,
+      }
+    },
+  },
+  {
+    id: 24,
+    kind: 'text',
+    name: 'Banana pepper stays a pepper, egg whites stay whites',
+    input: 'a banana pepper',
+    expect: 'banana pepper · egg whites',
+    run() {
+      const pepper = refineExtracted(
+        [{ raw: 'a banana pepper', query: 'banana', quantity: 1, unit: 'medium' }],
+        'a banana pepper',
+      )
+      const whites = refineExtracted(
+        [{ raw: '2 egg whites', query: 'eggs', quantity: 2, unit: 'large' }],
+        '2 egg whites',
+      )
+      const got = `${foodsLine(pepper)} · ${foodsLine(whites)}`
+      return {
+        pass: /banana pepper/i.test(pepper[0]?.query ?? '') && /egg white/i.test(whites[0]?.query ?? ''),
+        got,
+      }
+    },
+  },
+  {
+    id: 25,
+    kind: 'text',
+    name: 'KIND brand is recovered from the meal text',
+    input: 'a KIND protein bar',
+    expect: 'KIND protein bar',
+    run() {
+      const items = refineExtracted(
+        [{ raw: this.input, query: 'protein bar', quantity: 1, unit: 'bar' }],
+        this.input,
+      )
+      const got = foodsLine(items)
+      return { pass: items[0]?.brand === 'KIND' && /protein bar/i.test(items[0]?.query ?? ''), got }
     },
   },
 ]

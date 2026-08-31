@@ -168,6 +168,89 @@ export function extractFoods(text: string): ExtractedItem[] {
   return items.length ? items : [{ raw: trimmed, query: cleaned || trimmed, quantity: 1, unit: null }]
 }
 
+const GROUND_STOP = new Set([
+  'a', 'an', 'and', 'or', 'with', 'the', 'of', 'in', 'on', 'for', 'from', 'to', 'my', 'some',
+])
+
+function stemTok(t: string): string {
+  if (t.endsWith('ies') && t.length > 4) return `${t.slice(0, -3)}y`
+  if (t.endsWith('s') && t.length > 3 && !t.endsWith('ss')) return t.slice(0, -1)
+  return t
+}
+
+function normTokens(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter((t) => t && !GROUND_STOP.has(t))
+    .map(stemTok)
+}
+
+function mentionedInMeal(item: ExtractedItem, meal: string): boolean {
+  const mealToks = new Set(normTokens(meal))
+  const nameToks = normTokens(item.query)
+  if (!nameToks.length) return false
+  const hits = nameToks.filter((t) => mealToks.has(t))
+  if (nameToks.length === 1) return hits.length === 1
+  return hits.length >= Math.ceil(nameToks.length / 2)
+}
+
+function specifyFromMeal(item: ExtractedItem, meal: string): ExtractedItem {
+  const q = item.query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  const n = meal.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (/^eggs?$/.test(q) && /\begg whites?\b/.test(n)) {
+    return { ...item, query: /\bwhites\b/.test(n) ? 'egg whites' : 'egg white' }
+  }
+  if (!q || q.length < 3) return item
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const m = n.match(new RegExp(`\\b${escaped}s?\\s+([a-z]+)\\b`))
+  const extra = m?.[1]
+  if (
+    extra &&
+    !GROUND_STOP.has(extra) &&
+    !UNITS.includes(extra) &&
+    /^(pepper|peppers|bacon|white|whites|juice|milk|butter|bread|bowl|bar|yogurt)$/.test(extra)
+  ) {
+    return { ...item, query: `${q} ${extra}` }
+  }
+  return item
+}
+
+function brandFromMeal(meal: string, item: ExtractedItem): string | null {
+  if (item.brand?.trim()) return item.brand.trim()
+  const named = meal.match(/\b(KIND|Starbucks|Chipotle|McDonald'?s|Chobani|Applebee'?s)\b/i)
+  if (named) return named[1].replace(/mcdonalds/i, "McDonald's")
+  const caps = meal.match(/\b[A-Z]{2,8}\b/g)
+  if (caps?.length === 1) return caps[0]
+  return null
+}
+
+/** Drop example-food leaks and recover quantity/brand from the user's words. */
+export function refineExtracted(items: ExtractedItem[], meal: string): ExtractedItem[] {
+  if (!meal.trim() || meal.trim() === '(photo)') return items
+  const regex = extractFoods(meal).filter((i) => i.query && !i.caloriesHint)
+  return items
+    .filter((item) => mentionedInMeal(item, meal))
+    .map((item) => {
+      let next = specifyFromMeal(item, meal)
+      const q = next.query.toLowerCase()
+      const hit = regex.find((r) => {
+        const rq = r.query.toLowerCase()
+        return rq === q || rq.includes(q) || q.includes(rq)
+      })
+      if (hit && hit.quantity !== next.quantity) {
+        next = { ...next, quantity: hit.quantity, unit: hit.unit ?? next.unit }
+      } else if (hit && !next.unit && hit.unit) {
+        next = { ...next, unit: hit.unit }
+      }
+      next = { ...next, brand: brandFromMeal(meal, next) }
+      return next
+    })
+}
+
 export function looksLikeSentence(text: string): boolean {
   const t = text.trim()
   if (t.length > 40) return true

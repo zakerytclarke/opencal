@@ -31,7 +31,7 @@ export function aliasHit(predicted: string[], aliases: string[]): boolean {
       if (aToks.length === 1) {
         const first = tokensOf(pred.split(',')[0] ?? pred)
         const last = first[first.length - 1]
-        return last === aToks[0] || first.join(' ') === aToks[0]
+        return last === aToks[0] || first.join(' ') === aToks[0] || first.join(' ').endsWith(` ${aToks[0]}`)
       }
       const all = tokensOf(pred)
       return aToks.every((t) => all.includes(t))

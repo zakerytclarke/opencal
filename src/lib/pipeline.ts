@@ -1,4 +1,4 @@
-import { extractFoods, isQuickCalorie } from './extract'
+import { extractFoods, isQuickCalorie, refineExtracted } from './extract'
 import { bestMatch, candidateLines, entryFromFood, quickAddEntry, searchForItem, unmatchedEntry } from './foods'
 import { uid } from './storage'
 import { extractMealPhoto, extractMealText, pickFoodMatch } from './vlm'
@@ -72,20 +72,10 @@ async function matchOne(
   )
   const food =
     picked.decision.index != null ? rows[picked.decision.index]?.food ?? null : null
-  const quantity = picked.decision.quantity || item.quantity
-  const pickedUnit = picked.decision.unit
-  const extractedUnit = item.unit
-  const unit =
-    extractedUnit &&
-    /^(medium|large|small|extra large|whole)$/i.test(extractedUnit) &&
-    pickedUnit &&
-    /^(slice|slices|piece|pieces)$/i.test(pickedUnit)
-      ? extractedUnit
-      : (pickedUnit ?? extractedUnit)
   const resolved: ExtractedItem = {
     ...item,
-    quantity,
-    unit,
+    quantity: item.quantity,
+    unit: item.unit,
     brand: item.brand ?? null,
     query: item.query,
   }
@@ -177,7 +167,8 @@ export async function logFromText(
   const extracted = await extractMealText(text, (message, pct) => {
     handlers.onProgress?.({ message, pct: pct != null ? Math.min(26, pct * 0.26) : 12 })
   })
-  const items = extracted.items.length ? extracted.items : extractFoods(text)
+  const rawItems = extracted.items.length ? extracted.items : extractFoods(text)
+  const items = refineExtracted(rawItems, text)
   handlers.onExtracted?.(items)
   handlers.onProgress?.({
     message: items.length ? `Found ${items.length} food${items.length === 1 ? '' : 's'}` : 'No foods found',

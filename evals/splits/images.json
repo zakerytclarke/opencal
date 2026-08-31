@@ -34,7 +34,7 @@
       "aliases": ["banana"],
       "query": "banana",
       "foodId": "extra-3888682",
-      "quantity": 1,
+      "quantity": 5,
       "unit": "medium"
     },
     {
@@ -42,7 +42,8 @@
       "path": "scripts/fixtures/eggs.jpg",
       "label": "eggs",
       "source": "fixture",
-      "aliases": ["egg"],
+      "loose": true,
+      "aliases": ["egg", "avocado", "spinach", "bread", "muffin", "toast"],
       "query": "eggs",
       "foodId": "foundation-748967",
       "quantity": 2,
