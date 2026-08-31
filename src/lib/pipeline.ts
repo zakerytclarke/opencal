@@ -36,9 +36,9 @@ function stamp(entry: LogEntry, meta: {
   }
 }
 
-function preferReference(item: ExtractedItem, picked: Food | null, hits: Food[]): Food | null {
+function preferReference(item: ExtractedItem, picked: Food | null, hits: Food[], meal: string): Food | null {
   const brand = item.brand?.trim().toLowerCase()
-  const hay = `${item.query} ${item.unit ?? ''}`.toLowerCase()
+  const hay = `${meal} ${item.query} ${item.unit ?? ''}`.toLowerCase()
   let food = picked ?? hits[0] ?? null
   if (brand && food && !food.name.toLowerCase().includes(brand)) {
     food = hits.find((h) => h.name.toLowerCase().includes(brand)) ?? food
@@ -88,7 +88,7 @@ async function matchOne(
   )
   const pickedFood =
     picked.decision.index != null ? rows[picked.decision.index]?.food ?? null : null
-  const food = preferReference(item, pickedFood, hits)
+  const food = preferReference(item, pickedFood, hits, meal)
   const resolved: ExtractedItem = {
     ...item,
     quantity: item.quantity,

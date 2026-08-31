@@ -267,6 +267,9 @@ export function refineExtracted(items: ExtractedItem[], meal: string): Extracted
       } else if (hit && !next.unit && hit.unit) {
         next = { ...next, unit: hit.unit }
       }
+      if (/\bgrande\b/i.test(meal) && !next.unit) {
+        next = { ...next, unit: 'grande' }
+      }
       next = stripGuessedSize({ ...next, brand: brandFromMeal(meal, next) }, meal)
       return next
     })
