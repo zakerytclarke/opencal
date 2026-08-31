@@ -5,12 +5,13 @@ Sources (calorie numbers always come from USDA rows or Nutrition5k USDA-linked l
   1. USDA catalog synth — spoken meals with a forced mix of household units
   2. Combo meals — "X with Y and Z" stays three foods (does not collapse)
   3. OpenCal train split — held-in examples (never the test split)
-  4. Pick letters — gold USDA row; convert_portion is computed per candidate
-  5. Nutrition5k — local HF cache images + metadata.jsonl (no 181 GB dump)
-  6. Fixture photos — pizza.jpg / bowl.jpg only (never banana.jpg / eggs.jpg)
-  7. Coach / chat — USDA Q&A, refuse-to-guess, small talk so JSON does not wipe conversation
+  4. Nutrition5k — local HF cache images + metadata.jsonl (no 181 GB dump); held-out eval IDs skipped
+  5. Fixture photos — pizza.jpg / bowl.jpg only (never banana.jpg / eggs.jpg)
+  6. Coach / chat — USDA Q&A, refuse-to-guess, small talk so JSON does not wipe conversation
 
 The OpenCal text+image+coach TEST splits are frozen and never written into train JSONL.
+The VLM extracts name, brand, quantity, and unit. The host maps those to a USDA row
+and runs convert_portion. Lettered pick is not in the production mix.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ IMAGE_SPLIT = ROOT / "evals" / "splits" / "images.json"
 COACH_SPLIT = ROOT / "evals" / "splits" / "coach.json"
 PICK_SPLIT = ROOT / "evals" / "splits" / "pick.json"
 CITE_SPLIT = ROOT / "evals" / "splits" / "cite.json"
+N5K_EVAL_SPLIT = ROOT / "evals" / "splits" / "images.n5k.json"
 OUT_DIR = ROOT / "evals" / "data" / "finetune"
 IMG_DIR = OUT_DIR / "images"
 # Held-out vision eval. Never copy these into train JSONL.
@@ -111,6 +113,8 @@ PHOTO_USER_PARAPHRASE = [
     "List every food in the photo. Count pieces. JSON only.",
     "Extract foods from this picture. Count items and use household units. No calories.",
     "What is on this plate? Count each piece. Reply with extract JSON only.",
+    "Name brand, quantity, and unit for every food you can see. JSON only. No grams or calories.",
+    "Identify each food. Count how many. Household units only.",
 ]
 
 
@@ -219,6 +223,26 @@ def banned_texts() -> set[str]:
         for row in load_json(CITE_SPLIT).get("test") or []:
             banned.add(norm(row["user"]))
     return banned
+
+
+def n5k_eval_ids() -> set[str]:
+    """Dish ids in the frozen Nutrition5k identification split — never train on these."""
+    ids: set[str] = set()
+    if not N5K_EVAL_SPLIT.exists():
+        return ids
+    data = load_json(N5K_EVAL_SPLIT)
+    for row in (data.get("test") or []) + (data.get("train") or []):
+        ident = str(row.get("id") or "")
+        if ident.startswith("n5k-"):
+            ids.add(ident[4:])
+        sid = str(row.get("dishId") or "")
+        if sid:
+            ids.add(sid)
+        path = str(row.get("path") or "")
+        stem = Path(path).stem
+        if stem.startswith("dish_"):
+            ids.add(stem)
+    return {x for x in ids if x}
 
 
 def json_foods(items: list[dict]) -> str:
@@ -788,8 +812,8 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
         ("I'm hungry", "What's around? If you name it I can log a USDA serving, or we can look at a snack that fits your remaining calories."),
         ("lol ok", "Whenever you're ready, send a meal or a photo."),
         ("who are you", "OpenCal — on-device calorie tracking. I match what you ate to USDA servings instead of inventing numbers."),
-        ("what's a calorie", "A kilocalorie is energy. I use USDA per-100 g values after we pick a food row — I don't estimate from vibes."),
-        ("explain macros", "Protein, carbs, and fat. I pull those from the USDA row for the food we pick, scaled by the household portion."),
+        ("what's a calorie", "A kilocalorie is energy. I use USDA per-100 g values after the host maps your food to a USDA row — I don't estimate from vibes."),
+        ("explain macros", "Protein, carbs, and fat. I pull those from the USDA row the host mapped, scaled by the household portion."),
         ("write a haiku about broccoli", "Green tree, steamed and plain —\nUSDA cup, not a guess.\nWant me to log it?"),
         ("what's the weather", "I'm a calorie coach, not a weather app. What did you eat?"),
         ("tell me a joke", "I'd crack a yolk joke, but I'd rather log your breakfast. What did you have?"),
@@ -804,7 +828,7 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
         ("just make up the calories for leftover stew", "I don't invent calories. Name the stew or the ingredients and I'll use a USDA row, or we leave it unmatched."),
         ("can you estimate my homemade chili without ingredients", "Not accurately. List what's in it (beef, beans, tomatoes, …) and I'll log those USDA foods."),
         ("how many calories if the catalog has no dragonfruit soda?", "I don't have a USDA row for dragonfruit soda in this catalog, so I won't invent a number. If you can name a close drink I do have, I'll use that convert_portion line."),
-        ("how many calories in a banana if this catalog has no bananas?", "If there's no banana USDA row in context I pick null and leave it unmatched. convert_portion never runs without a matching row, so I won't invent kcal."),
+        ("how many calories in a banana if this catalog has no bananas?", "If there's no banana USDA row I leave it unmatched and do not invent kcal. convert_portion never runs without a matching row."),
         ("can you just use banana chips calories for a banana?", "No. Banana chips are a different USDA row. If the fruit banana isn't in the catalog I refuse rather than cite chips."),
         ("do you know MyFitnessPal", "I don't compare notes with other apps. I match your foods to USDA servings here on device."),
         ("what's for dinner", "Whatever you have. Name it and I'll log USDA portions; I won't invent a menu."),
@@ -860,7 +884,13 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
             "is a slice of banana about a fifth of a medium?",
             f"A USDA {banana['serveLabel']} is {int(round(bg))} g. Slice isn't a USDA unit for banana — "
             f"a household slice is roughly 1/5–1/6 of that medium (~{int(round(100 / 6))}–{int(round(100 / 5))}% by weight). "
-            f"convert_portion still needs the banana row; if the catalog has no banana I pick null and don't invent kcal.",
+            f"convert_portion still needs the banana row; if the catalog has no banana I say so and do not invent kcal.",
+            "units",
+        )
+        add(
+            "how should I think of a fruit wedge versus the USDA medium?",
+            f"A USDA {banana['serveLabel']} is {int(round(bg))} g. A wedge is a fraction of that medium, "
+            f"not a made-up kcal. convert_portion uses the fruit row; without that row I say so and do not guess.",
             "units",
         )
     pb = find_food(foods, "peanut butter")
@@ -960,7 +990,7 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
                     ]
                 ),
                 f"{fact} convert_portion {qty_num(qty)} {unit} → {int(round(r['grams']))} g, {r['kcal']} kcal "
-                f"from that row. If this catalog has no matching row I pick null and do not invent kcal.",
+                f"from that row. If this catalog has no matching row I say so and do not invent kcal.",
                 "units",
             )
         else:
@@ -1082,12 +1112,19 @@ def build_nutrition5k(limit: int, rng: random.Random) -> list[dict]:
                 samples.append(json.loads(line))
     rng.shuffle(samples)
 
+    skip = n5k_eval_ids()
+    if skip:
+        print(f" nutrition5k skipping {len(skip)} held-out eval dishes")
+
     for sample in samples:
         if len(rows) >= limit:
             break
         cals = sample.get("total_calories") or 0
         ingredients = sample.get("ingredients") or []
         if cals < 80 or len(ingredients) < 1:
+            continue
+        sid = str(sample.get("id") or "")
+        if sid in skip:
             continue
         rel = (sample.get("file_name") or "").replace("\\", "/")
         src = snap / rel
@@ -1104,7 +1141,8 @@ def build_nutrition5k(limit: int, rng: random.Random) -> list[dict]:
             foods.append(grams_item(name, grams, rng))
         if not foods:
             continue
-        sid = str(sample.get("id") or src.stem)
+        if not sid:
+            sid = src.stem
         out_path = IMG_DIR / f"n5k-{sid}.jpg"
         if not out_path.exists():
             try:
@@ -1129,10 +1167,10 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--synth", type=int, default=3500)
     p.add_argument("--combo", type=int, default=700)
-    p.add_argument("--pick", type=int, default=2400)
-    p.add_argument("--coach", type=int, default=1800)
-    p.add_argument("--n5k", type=int, default=500)
-    p.add_argument("--fixture-upsample", type=int, default=48)
+    p.add_argument("--pick", type=int, default=0, help="Lettered USDA pick examples; 0 = off (host maps)")
+    p.add_argument("--coach", type=int, default=2000)
+    p.add_argument("--n5k", type=int, default=900)
+    p.add_argument("--fixture-upsample", type=int, default=96)
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--skip-n5k", action="store_true")
     args = p.parse_args()
@@ -1147,7 +1185,7 @@ def main() -> None:
         "curriculum": build_curriculum(banned),
         "synth": build_synth(foods, args.synth, rng, banned),
         "combo": build_combos(foods, args.combo, rng, banned),
-        "pick": build_pick(foods, args.pick, rng),
+        "pick": build_pick(foods, args.pick, rng) if args.pick else [],
         "coach": build_coach(foods, args.coach, rng, banned),
         "fixtures": build_fixtures(args.fixture_upsample, rng),
         "nutrition5k": [] if args.skip_n5k else build_nutrition5k(args.n5k, rng),
@@ -1169,6 +1207,14 @@ def main() -> None:
     leaked = [r for r in train + val if r.get("image") and str(r["image"]) in BANNED_IMAGES]
     if leaked:
         raise SystemExit(f"refusing to write train mix: {len(leaked)} held-out images leaked")
+    eval_ids = n5k_eval_ids()
+    leaked_n5k = [
+        r
+        for r in train + val
+        if r.get("image") and Path(str(r["image"])).stem.replace("n5k-", "", 1) in eval_ids
+    ]
+    if leaked_n5k:
+        raise SystemExit(f"refusing to write train mix: {len(leaked_n5k)} Nutrition5k eval dishes leaked")
 
     rng.shuffle(train)
     rng.shuffle(val)

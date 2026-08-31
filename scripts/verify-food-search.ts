@@ -8,6 +8,7 @@ import {
   foodSourceUrl,
   getFood,
   loadFoods,
+  mapToBaseFood,
   referenceFitsItem,
   searchForItem,
   searchFoods,
@@ -620,6 +621,61 @@ const cases: Case[] = [
       return {
         pass: fruitOk && !chipsOk && !pepperAsBanana && pepperOk,
         got: `fruit=${fruitOk} chips=${chipsOk} pepper-as-banana=${pepperAsBanana} pepper=${pepperOk} · ${fruit?.name}/${chips?.name}/${pepper?.name}`,
+      }
+    },
+  },
+  {
+    name: 'Host maps turkey bacon without a VLM pick',
+    run() {
+      const mapped = mapToBaseFood(item('turkey bacon', { quantity: 2, unit: 'slice' }))
+      const name = mapped?.food.name ?? ''
+      return {
+        pass: /turkey bacon/i.test(name) && !/grease|canadian|pork/i.test(name) && /convert_portion/.test(mapped?.citation ?? ''),
+        got: `${name} · ${mapped?.citation ?? 'none'}`,
+      }
+    },
+  },
+  {
+    name: 'Host maps banana to fruit, not chips',
+    run() {
+      const mapped = mapToBaseFood(item('banana', { quantity: 1, unit: 'medium' }), 'I ate a banana')
+      const name = mapped?.food.name ?? ''
+      return {
+        pass: Boolean(mapped && /banana/i.test(name) && !/chip|pepper/i.test(name) && mapped.food.serveG >= 80),
+        got: `${name} ${mapped?.food.serveG ?? 0}g`,
+      }
+    },
+  },
+  {
+    name: 'Host maps banana pepper, not fruit banana',
+    run() {
+      const mapped = mapToBaseFood(item('banana pepper'), 'banana pepper on a sandwich')
+      const name = mapped?.food.name ?? ''
+      return {
+        pass: /pepper/i.test(name) && !/^bananas?, raw$/i.test(name),
+        got: name || 'none',
+      }
+    },
+  },
+  {
+    name: 'Host maps KIND bar by brand',
+    run() {
+      const mapped = mapToBaseFood(item('kind bar', { brand: 'KIND', quantity: 1, unit: 'bar' }))
+      return {
+        pass: /kind/i.test(mapped?.food.name ?? ''),
+        got: mapped?.food.name ?? 'none',
+      }
+    },
+  },
+  {
+    name: 'Banana chips do not map as a fruit banana',
+    run() {
+      const fruit = mapToBaseFood(item('banana', { quantity: 1, unit: 'medium' }))
+      const chipsRow = searchFoods('banana chips', 6)[0]
+      const chipsFit = chipsRow ? referenceFitsItem(item('banana', { quantity: 1, unit: 'medium' }), chipsRow) : true
+      return {
+        pass: Boolean(fruit && !/chip/i.test(fruit.food.name) && !chipsFit),
+        got: `fruit=${fruit?.food.name ?? 'none'} chipsFit=${chipsFit}`,
       }
     },
   },

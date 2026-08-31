@@ -1,0 +1,537 @@
+{
+  "seed": "opencal-n5k-eval-v1",
+  "note": "Nutrition5k identification eval. FooDD-class singles (max 6/class, mass window) plus 12 mixed plates. Excludes v5 train thumbs. Never banana.jpg/eggs.jpg.",
+  "train": [],
+  "test": [
+    {
+      "id": "n5k-dish_1558722398",
+      "path": "evals/data/n5k-eval/dish_1558722398.png",
+      "label": "apple",
+      "source": "nutrition5k",
+      "aliases": [
+        "apple",
+        "red apple",
+        "green apple",
+        "fuji",
+        "gala"
+      ],
+      "query": "apple",
+      "foodId": "fndds-2709215",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 52
+    },
+    {
+      "id": "n5k-dish_1558640593",
+      "path": "evals/data/n5k-eval/dish_1558640593.png",
+      "label": "apple",
+      "source": "nutrition5k",
+      "aliases": [
+        "apple",
+        "red apple",
+        "green apple",
+        "fuji",
+        "gala"
+      ],
+      "query": "apple",
+      "foodId": "fndds-2709215",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 52
+    },
+    {
+      "id": "n5k-dish_1558545738",
+      "path": "evals/data/n5k-eval/dish_1558545738.png",
+      "label": "apple",
+      "source": "nutrition5k",
+      "aliases": [
+        "apple",
+        "red apple",
+        "green apple",
+        "fuji",
+        "gala"
+      ],
+      "query": "apple",
+      "foodId": "fndds-2709215",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 52
+    },
+    {
+      "id": "n5k-dish_1558721726",
+      "path": "evals/data/n5k-eval/dish_1558721726.png",
+      "label": "apple",
+      "source": "nutrition5k",
+      "aliases": [
+        "apple",
+        "red apple",
+        "green apple",
+        "fuji",
+        "gala"
+      ],
+      "query": "apple",
+      "foodId": "fndds-2709215",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 52
+    },
+    {
+      "id": "n5k-dish_1558458847",
+      "path": "evals/data/n5k-eval/dish_1558458847.png",
+      "label": "apple",
+      "source": "nutrition5k",
+      "aliases": [
+        "apple",
+        "red apple",
+        "green apple",
+        "fuji",
+        "gala"
+      ],
+      "query": "apple",
+      "foodId": "fndds-2709215",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 52
+    },
+    {
+      "id": "n5k-dish_1558635546",
+      "path": "evals/data/n5k-eval/dish_1558635546.png",
+      "label": "apple",
+      "source": "nutrition5k",
+      "aliases": [
+        "apple",
+        "red apple",
+        "green apple",
+        "fuji",
+        "gala"
+      ],
+      "query": "apple",
+      "foodId": "fndds-2709215",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 52
+    },
+    {
+      "id": "n5k-dish_1558640039",
+      "path": "evals/data/n5k-eval/dish_1558640039.png",
+      "label": "carrot",
+      "source": "nutrition5k",
+      "aliases": [
+        "carrot"
+      ],
+      "query": "carrot",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 41
+    },
+    {
+      "id": "n5k-dish_1558633158",
+      "path": "evals/data/n5k-eval/dish_1558633158.png",
+      "label": "carrot",
+      "source": "nutrition5k",
+      "aliases": [
+        "carrot"
+      ],
+      "query": "carrot",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 41
+    },
+    {
+      "id": "n5k-dish_1558639526",
+      "path": "evals/data/n5k-eval/dish_1558639526.png",
+      "label": "carrot",
+      "source": "nutrition5k",
+      "aliases": [
+        "carrot"
+      ],
+      "query": "carrot",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 41
+    },
+    {
+      "id": "n5k-dish_1558642089",
+      "path": "evals/data/n5k-eval/dish_1558642089.png",
+      "label": "carrot",
+      "source": "nutrition5k",
+      "aliases": [
+        "carrot"
+      ],
+      "query": "carrot",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 41
+    },
+    {
+      "id": "n5k-dish_1558722636",
+      "path": "evals/data/n5k-eval/dish_1558722636.png",
+      "label": "carrot",
+      "source": "nutrition5k",
+      "aliases": [
+        "carrot"
+      ],
+      "query": "carrot",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 41
+    },
+    {
+      "id": "n5k-dish_1558641007",
+      "path": "evals/data/n5k-eval/dish_1558641007.png",
+      "label": "carrot",
+      "source": "nutrition5k",
+      "aliases": [
+        "carrot"
+      ],
+      "query": "carrot",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 41
+    },
+    {
+      "id": "n5k-dish_1562096343",
+      "path": "evals/data/n5k-eval/dish_1562096343.png",
+      "label": "cucumber",
+      "source": "nutrition5k",
+      "aliases": [
+        "cucumber"
+      ],
+      "query": "cucumber",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 16
+    },
+    {
+      "id": "n5k-dish_1560961179",
+      "path": "evals/data/n5k-eval/dish_1560961179.png",
+      "label": "egg",
+      "source": "nutrition5k",
+      "aliases": [
+        "egg",
+        "eggs"
+      ],
+      "query": "eggs",
+      "foodId": "foundation-748967",
+      "quantity": 2,
+      "unit": "large",
+      "kcalPer100g": 155
+    },
+    {
+      "id": "n5k-dish_1562605315",
+      "path": "evals/data/n5k-eval/dish_1562605315.png",
+      "label": "egg",
+      "source": "nutrition5k",
+      "aliases": [
+        "egg",
+        "eggs"
+      ],
+      "query": "eggs",
+      "foodId": "foundation-748967",
+      "quantity": 2,
+      "unit": "large",
+      "kcalPer100g": 155
+    },
+    {
+      "id": "n5k-dish_1559149688",
+      "path": "evals/data/n5k-eval/dish_1559149688.png",
+      "label": "egg",
+      "source": "nutrition5k",
+      "aliases": [
+        "egg",
+        "eggs"
+      ],
+      "query": "eggs",
+      "foodId": "foundation-748967",
+      "quantity": 2,
+      "unit": "large",
+      "kcalPer100g": 155
+    },
+    {
+      "id": "n5k-dish_1559239256",
+      "path": "evals/data/n5k-eval/dish_1559239256.png",
+      "label": "orange",
+      "source": "nutrition5k",
+      "aliases": [
+        "orange"
+      ],
+      "query": "orange",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 47
+    },
+    {
+      "id": "n5k-dish_1559239912",
+      "path": "evals/data/n5k-eval/dish_1559239912.png",
+      "label": "orange",
+      "source": "nutrition5k",
+      "aliases": [
+        "orange"
+      ],
+      "query": "orange",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 47
+    },
+    {
+      "id": "n5k-dish_1559240908",
+      "path": "evals/data/n5k-eval/dish_1559240908.png",
+      "label": "orange",
+      "source": "nutrition5k",
+      "aliases": [
+        "orange"
+      ],
+      "query": "orange",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 47
+    },
+    {
+      "id": "n5k-dish_1559245848",
+      "path": "evals/data/n5k-eval/dish_1559245848.png",
+      "label": "orange",
+      "source": "nutrition5k",
+      "aliases": [
+        "orange"
+      ],
+      "query": "orange",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 47
+    },
+    {
+      "id": "n5k-dish_1559238481",
+      "path": "evals/data/n5k-eval/dish_1559238481.png",
+      "label": "orange",
+      "source": "nutrition5k",
+      "aliases": [
+        "orange"
+      ],
+      "query": "orange",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 47
+    },
+    {
+      "id": "n5k-dish_1559932674",
+      "path": "evals/data/n5k-eval/dish_1559932674.png",
+      "label": "orange",
+      "source": "nutrition5k",
+      "aliases": [
+        "orange"
+      ],
+      "query": "orange",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 47
+    },
+    {
+      "id": "n5k-dish_1562009810",
+      "path": "evals/data/n5k-eval/dish_1562009810.png",
+      "label": "rice",
+      "source": "nutrition5k",
+      "aliases": [
+        "rice"
+      ],
+      "query": "rice",
+      "quantity": 1,
+      "unit": "cup",
+      "kcalPer100g": 130
+    },
+    {
+      "id": "n5k-dish_1558629398",
+      "path": "evals/data/n5k-eval/dish_1558629398.png",
+      "label": "tomato",
+      "source": "nutrition5k",
+      "aliases": [
+        "tomato"
+      ],
+      "query": "tomato",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 18
+    },
+    {
+      "id": "n5k-dish_1558636514",
+      "path": "evals/data/n5k-eval/dish_1558636514.png",
+      "label": "tomato",
+      "source": "nutrition5k",
+      "aliases": [
+        "tomato"
+      ],
+      "query": "tomato",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 18
+    },
+    {
+      "id": "n5k-dish_1558721484",
+      "path": "evals/data/n5k-eval/dish_1558721484.png",
+      "label": "tomato",
+      "source": "nutrition5k",
+      "aliases": [
+        "tomato"
+      ],
+      "query": "tomato",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 18
+    },
+    {
+      "id": "n5k-dish_1558639907",
+      "path": "evals/data/n5k-eval/dish_1558639907.png",
+      "label": "tomato",
+      "source": "nutrition5k",
+      "aliases": [
+        "tomato"
+      ],
+      "query": "tomato",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 18
+    },
+    {
+      "id": "n5k-dish_1558722842",
+      "path": "evals/data/n5k-eval/dish_1558722842.png",
+      "label": "tomato",
+      "source": "nutrition5k",
+      "aliases": [
+        "tomato"
+      ],
+      "query": "tomato",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 18
+    },
+    {
+      "id": "n5k-dish_1558631872",
+      "path": "evals/data/n5k-eval/dish_1558631872.png",
+      "label": "tomato",
+      "source": "nutrition5k",
+      "aliases": [
+        "tomato"
+      ],
+      "query": "tomato",
+      "quantity": 1,
+      "unit": "medium",
+      "kcalPer100g": 18
+    },
+    {
+      "id": "n5k-dish_1561575688",
+      "path": "evals/data/n5k-eval/dish_1561575688.png",
+      "label": "arugula+beef+roasted potatoes",
+      "source": "nutrition5k",
+      "aliases": [
+        "arugula",
+        "arugula",
+        "beef",
+        "beef",
+        "roasted potatoe",
+        "roasted potatoes"
+      ],
+      "query": "arugula",
+      "quantity": 1,
+      "unit": "bowl",
+      "loose": true,
+      "expect": [
+        {
+          "aliases": [
+            "arugula",
+            "arugula"
+          ],
+          "query": "arugula",
+          "quantity": 1,
+          "unit": "serving"
+        },
+        {
+          "aliases": [
+            "beef",
+            "beef"
+          ],
+          "query": "beef",
+          "quantity": 1,
+          "unit": "serving"
+        },
+        {
+          "aliases": [
+            "roasted potatoe",
+            "roasted potatoes"
+          ],
+          "query": "roasted potatoes",
+          "quantity": 1,
+          "unit": "serving"
+        }
+      ]
+    },
+    {
+      "id": "n5k-dish_1559846073",
+      "path": "evals/data/n5k-eval/dish_1559846073.png",
+      "label": "mandarin oranges+broccoli",
+      "source": "nutrition5k",
+      "aliases": [
+        "mandarin orange",
+        "mandarin oranges",
+        "broccoli",
+        "broccoli"
+      ],
+      "query": "mandarin oranges",
+      "quantity": 1,
+      "unit": "bowl",
+      "loose": true,
+      "expect": [
+        {
+          "aliases": [
+            "mandarin orange",
+            "mandarin oranges"
+          ],
+          "query": "mandarin oranges",
+          "quantity": 1,
+          "unit": "serving"
+        },
+        {
+          "aliases": [
+            "broccoli",
+            "broccoli"
+          ],
+          "query": "broccoli",
+          "quantity": 1,
+          "unit": "serving"
+        }
+      ]
+    },
+    {
+      "id": "n5k-dish_1560799407",
+      "path": "evals/data/n5k-eval/dish_1560799407.png",
+      "label": "pork+carrot",
+      "source": "nutrition5k",
+      "aliases": [
+        "pork",
+        "pork",
+        "carrot"
+      ],
+      "query": "pork",
+      "quantity": 1,
+      "unit": "bowl",
+      "loose": true,
+      "expect": [
+        {
+          "aliases": [
+            "pork",
+            "pork"
+          ],
+          "query": "pork",
+          "quantity": 1,
+          "unit": "serving"
+        },
+        {
+          "aliases": [
+            "carrot"
+          ],
+          "query": "carrot",
+          "quantity": 1,
+          "unit": "medium"
+        }
+      ]
+    }
+  ]
+}

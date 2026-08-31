@@ -438,7 +438,7 @@ export async function pickFoodMatch(
   }
 }
 
-/** Extract-only wrappers used by tests. Matching happens in the pipeline. */
+/** Extract-only wrappers used by tests. USDA mapping happens in the pipeline. */
 export async function analyzeMealText(text: string, onProgress?: ProgressFn): Promise<AnalyzeResult> {
   return extractMealText(text, onProgress)
 }

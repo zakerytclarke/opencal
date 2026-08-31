@@ -1,8 +1,8 @@
 # Fine-tune OpenCal's on-device VLM
 
 Target: `LiquidAI/LFM2.5-VL-450M` (same family as the in-app ONNX build).
-Primary metric: **full-meal calorie MAE** after extract → MiniSearch → `convert_portion` (USDA per 100 g).
-The model still must not invent calories; it names foods and household units. Coach mix keeps chat/Q&A.
+Primary metric: **food name accuracy** on photos plus **full-meal calorie MAE** after extract → host USDA map → `convert_portion` (USDA per 100 g).
+The model extracts name, brand, quantity, and unit. It must not invent calories or pick a catalog letter. Coach mix keeps chat/Q&A with USDA citations.
 
 ## Datasets
 
@@ -12,12 +12,11 @@ The model still must not invent calories; it names foods and household units. Co
 | Combos | "X with Y and Z" stays three foods | Extract JSON |
 | Curriculum | Hand-written units + restaurant bowls + sides | Extract JSON |
 | OpenCal train split | `evals/splits/text.json` train only | Extract JSON |
-| Pick letters | Gold USDA row; `convert_portion` is computed **per candidate** | `{"pick":"A",...}` |
-| Nutrition5k | Local HF cache plates + `metadata.jsonl` (no 181 GB dump) | Ingredient list |
+| Nutrition5k | Local HF cache plates + `metadata.jsonl` (held-out `images.n5k.json` IDs skipped) | Ingredient list |
 | Fixture photos | `pizza.jpg` / `bowl.jpg` only — never `banana.jpg` / `eggs.jpg` | Multi-item JSON |
 | Coach | USDA Q&A, refuse-to-guess, small talk, log-routing | Prose or JSON |
 
-Held out forever: `evals/splits/text.json` test, `images.json` test, `coach.json` test, `pick.json` test (meal strings), `cite.json` test.
+Held out forever: `evals/splits/text.json` test, `images.json` test, `coach.json` test, `cite.json` test, `images.n5k.json` test. `pick.json` is unused in production.
 
 ## Commands
 
@@ -68,5 +67,5 @@ Results: `evals/results/ft-baseline.md`, `ft-finetuned.md`, `ft-compare.md`.
 npm run dev
 ```
 
-The app probes `/vlm/health` first. If the local server is up, extract/pick/photo go there. Otherwise it loads ONNX from `/models/lfm25vl-opencal` when present, else the public `onnx-community` repo.
+The app probes `/vlm/health` first. If the local server is up, extract/photo go there. Otherwise it loads ONNX from `/models/lfm25vl-opencal` when present, else the public `onnx-community` repo. USDA mapping is host-side MiniSearch, not a VLM pick call.
 

@@ -131,8 +131,8 @@ def main() -> None:
     lines = [
         "# OpenCal fine-tune: before vs after",
         "",
-        "Held-out eval is `evals/splits/text.json` + `images.json` test, plus `coach.json`.",
-        "Calories are MiniSearch + convert_portion on the model's extract (USDA per-100 g), not model-invented numbers.",
+        "Held-out eval is `evals/splits/text.json` + `images.json` test, plus Nutrition5k identification (`images.n5k.json`) and `coach.json` / `cite.json`.",
+        "The VLM extracts name, brand, quantity, and unit. Calories are MiniSearch + convert_portion on the host-mapped USDA row, not model-invented numbers.",
         "",
         "## Meal calories (primary)",
         "",
@@ -192,10 +192,11 @@ def main() -> None:
             "",
             "Eval infer uses the same `{\"foods\":[` assistant prefix as the PWA.",
             "Text MAE applies the same refineExtracted host pass as the PWA (bare eggs → large, compound names).",
+            "Production no longer asks the VLM to pick a USDA letter; the host maps extract JSON to a base food.",
             "`fix-eggs` gold is 2 large eggs (185 kcal) while the photo is a mixed plate;",
             "the model emits JSON for egg plus sides, which inflates image MAE vs that eggs-only label.",
-            "Banana photo currently counts 7 (was 5 / 525 kcal). Text MAE is the cleaner calorie signal.",
-            "If the USDA fruit banana row is missing from hits, pick-null (and the host) refuse chips/pepper near-misses (0 kcal unmatched).",
+            "Image identification (name accuracy) is the vision metric; banana count is the clean fixture calorie check.",
+            "If MiniSearch cannot map the extracted name, the host leaves the diary unmatched (0 kcal).",
         ]
     pick_after = ROOT / "evals/data/finetune/preds/finetuned/pick.json"
     if pick_after.exists():
@@ -208,9 +209,9 @@ def main() -> None:
             "",
             "## Pick / refuse (RAG)",
             "",
-            f"Held-out `evals/splits/pick.json`: {ok}/{n} correct.",
+            f"Held-out `evals/splits/pick.json`: {ok}/{n} correct (debug only; not used in production).",
             f"Refuse when the true USDA row is missing: {none_ok}/{none_n}.",
-            "Calories are never taken from the model; pick-null leaves the diary unmatched (0 kcal).",
+            "Production maps extract → USDA on the host. Calories are never taken from the model.",
         ]
     cite_after = ROOT / "evals/data/finetune/preds/finetuned/cite.json"
     if cite_after.exists():

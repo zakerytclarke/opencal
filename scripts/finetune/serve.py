@@ -77,7 +77,7 @@ def extract_photo(image: Image.Image) -> dict:
             ],
         },
     ]
-    raw = generate(MODEL, PROCESSOR, messages, 220, DEVICE, EXTRACT_PREFIX)
+    raw = generate(MODEL, PROCESSOR, messages, 280, DEVICE, EXTRACT_PREFIX)
     return {"raw": raw, "items": parse_foods(raw)}
 
 

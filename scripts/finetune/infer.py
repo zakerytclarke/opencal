@@ -235,6 +235,7 @@ def main() -> None:
     p.add_argument("--split", default="test")
     p.add_argument("--out", default="")
     p.add_argument("--limit", type=int, default=0)
+    p.add_argument("--pick", action="store_true", help="Also run lettered pick eval (not used in production)")
     args = p.parse_args()
 
     out_dir = Path(args.out) if args.out else ROOT / "evals" / "data" / "finetune" / "preds" / args.tag
@@ -251,10 +252,13 @@ def main() -> None:
     model.eval()
 
     text_split = load_json(ROOT / "evals/splits/text.json")
-    image_split = load_json(ROOT / "evals/splits/images.json")
+    image_rows = []
+    for name in ("images.json", "images.foodd.json", "images.n5k.json"):
+        path = ROOT / "evals/splits" / name
+        if path.exists():
+            image_rows.extend(load_json(path).get(args.split) or [])
     coach_split = load_json(ROOT / "evals/splits/coach.json")
     text_rows = text_split[args.split]
-    image_rows = image_split[args.split]
     if args.limit:
         text_rows = text_rows[: args.limit]
         image_rows = image_rows[: args.limit]
@@ -286,7 +290,7 @@ def main() -> None:
                 ],
             },
         ]
-        raw = generate(model, processor, messages, 220, device, EXTRACT_PREFIX)
+        raw = generate(model, processor, messages, 280, device, EXTRACT_PREFIX)
         items = parse_foods(raw)
         extracts.append({"id": row["id"], "modality": "image", "raw": raw, "items": items, "path": row["path"]})
         print(f"IMAGE {row['id']} → {items or raw[:80]!r}", flush=True)
@@ -303,7 +307,7 @@ def main() -> None:
 
     pick_split = ROOT / "evals/splits/pick.json"
     pick_preds = []
-    if pick_split.exists():
+    if args.pick and pick_split.exists():
         catalog = load_json(ROOT / "public/foods.json")["foods"]
         for case in load_json(pick_split)["test"]:
             built = build_pick_case(catalog, case)

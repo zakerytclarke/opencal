@@ -394,6 +394,47 @@ export function searchForItem(item: ExtractedItem, limit = 8): Food[] {
   return searchForItem({ ...item, brand: null }, limit)
 }
 
+/** Brand / grande cues from the meal or extract, applied on MiniSearch hits. */
+export function preferReference(item: ExtractedItem, picked: Food | null, hits: Food[], meal: string): Food | null {
+  const brand = item.brand?.trim().toLowerCase()
+  const hay = `${meal} ${item.query} ${item.unit ?? ''}`.toLowerCase()
+  let food = picked
+  if (brand && food && !food.name.toLowerCase().includes(brand)) {
+    food = hits.find((h) => h.name.toLowerCase().includes(brand)) ?? food
+  }
+  if (/\bgrande\b/.test(hay)) {
+    const grande = hits.find(
+      (h) => /grande/i.test(h.name) && (!brand || h.name.toLowerCase().includes(brand)),
+    )
+    if (grande) food = grande
+  }
+  return food
+}
+
+export type MappedFood = {
+  food: Food
+  citation: string
+}
+
+/**
+ * Host-side USDA map: MiniSearch + brand/grande + near-miss reject.
+ * Calories come from convert_portion on the chosen row — the VLM never picks a letter.
+ */
+export function mapToBaseFood(item: ExtractedItem, meal = ''): MappedFood | null {
+  const hits = searchForItem(item, 8)
+  if (!hits.length) return null
+  const preferred = preferReference(item, hits[0] ?? null, hits, meal)
+  const ordered = preferred
+    ? [preferred, ...hits.filter((h) => h.id !== preferred.id)]
+    : hits
+  for (const food of ordered) {
+    if (!referenceFitsItem(item, food)) continue
+    const converted = portionFor(food, item)
+    return { food, citation: portionToolLine(food, item, converted) }
+  }
+  return null
+}
+
 export function entryFromFood(
   food: Food,
   item: ExtractedItem,

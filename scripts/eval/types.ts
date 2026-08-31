@@ -26,6 +26,8 @@ export type ImageCase = {
   foodId?: string
   kcalPer100g?: number
   loose?: boolean
+  /** Multi-ingredient gold. When set, scoring uses these instead of the single query/aliases fields. */
+  expect?: ExpectItem[]
 }
 
 export type TextSplitFile = {

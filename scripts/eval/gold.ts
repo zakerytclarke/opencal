@@ -1,5 +1,5 @@
 import { entryFromFood, getFood, bestMatch } from '../../src/lib/foods.ts'
-import type { ExpectItem } from './types.ts'
+import type { ExpectItem, ImageCase } from './types.ts'
 
 export function goldEntry(item: ExpectItem) {
   const food = (item.foodId ? getFood(item.foodId) : null) ?? bestMatch(item.query)
@@ -31,4 +31,18 @@ export function goldEntry(item: ExpectItem) {
 
 export function goldMealKcal(items: ExpectItem[]): number {
   return items.reduce((sum, item) => sum + goldEntry(item).kcal, 0)
+}
+
+/** Single-food FooDD/fixture rows, or multi-ingredient Nutrition5k `expect`. */
+export function imageExpect(row: ImageCase): ExpectItem[] {
+  if (row.expect?.length) return row.expect
+  return [
+    {
+      aliases: row.aliases,
+      query: row.query,
+      quantity: row.quantity,
+      unit: row.unit,
+      foodId: row.foodId,
+    },
+  ]
 }

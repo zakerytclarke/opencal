@@ -25,7 +25,7 @@ export function VoiceSheet({ date, onClose, onLog, onFallbackSearch }: Props) {
       onFinal: (text) => {
         setFinalText(text)
         setPartial('')
-        setStatus('Matching foods…')
+        setStatus('Looking up USDA…')
         const items = extractFoods(text)
         const resolved = resolveExtracted(items, date, 'voice').map((r) => r.entry)
         setPreview(resolved)

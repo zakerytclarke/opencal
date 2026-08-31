@@ -8,11 +8,12 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupLocalFoods } from './setup.ts'
 import { refineExtracted } from '../../src/lib/extract.ts'
-import { goldMealKcal } from './gold.ts'
+import { goldMealKcal, imageExpect } from './gold.ts'
 import { formatSummary, scoreCase, summarize } from './metrics.ts'
-import { entryFromFood, searchForItem } from '../../src/lib/foods.ts'
+import { entryFromFood, mapToBaseFood } from '../../src/lib/foods.ts'
 import type { ExtractedItem } from '../../src/types.ts'
-import type { CaseScore, ImageSplitFile, TextSplitFile } from './types.ts'
+import type { CaseScore, TextSplitFile } from './types.ts'
+import { imageCaseIndex, loadAllImageSplits } from './image-splits.ts'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 
@@ -40,9 +41,8 @@ if (!existsSync(extractsPath)) {
 
 const extracts = JSON.parse(readFileSync(extractsPath, 'utf8')) as ExtractRow[]
 const textFile = JSON.parse(readFileSync(join(root, 'evals/splits/text.json'), 'utf8')) as TextSplitFile
-const imageFile = JSON.parse(readFileSync(join(root, 'evals/splits/images.json'), 'utf8')) as ImageSplitFile
 const textById = new Map([...textFile.train, ...textFile.test].map((r) => [r.id, r]))
-const imageById = new Map([...imageFile.train, ...imageFile.test].map((r) => [r.id, r]))
+const imageById = imageCaseIndex(loadAllImageSplits(root))
 
 const scores: CaseScore[] = []
 for (const row of extracts) {
@@ -63,8 +63,8 @@ for (const row of extracts) {
     const entries = items
       .filter((i) => i.query)
       .map((item) => {
-        const food = searchForItem(item, 8)[0]
-        return food ? entryFromFood(food, item, 'search', '1970-01-01') : null
+        const mapped = mapToBaseFood(item, gold.text)
+        return mapped ? entryFromFood(mapped.food, item, 'search', '1970-01-01') : null
       })
     const named = entries.map((e) => (e ? `${e.brand ?? ''} ${e.name}`.trim() : ''))
     const kcalPred = entries.reduce((s, e) => s + (e?.kcal ?? 0), 0)
@@ -92,11 +92,12 @@ for (const row of extracts) {
       quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
       unit: it.unit ?? null,
     }))
+    const goldItems = imageExpect(gold)
     const entries = items
       .filter((i) => i.query)
       .map((item) => {
-        const food = searchForItem(item, 8)[0]
-        return food ? entryFromFood(food, item, 'photo', '1970-01-01') : null
+        const mapped = mapToBaseFood(item, '(photo)')
+        return mapped ? entryFromFood(mapped.food, item, 'photo', '1970-01-01') : null
       })
     const named = entries.map((e) => (e ? `${e.brand ?? ''} ${e.name}`.trim() : ''))
     const kcalPred = entries.reduce((s, e) => s + (e?.kcal ?? 0), 0)
@@ -107,12 +108,10 @@ for (const row of extracts) {
         modality: 'image',
         source: gold.source,
         predictedNames: named.filter(Boolean),
-        goldAliases: [gold.aliases],
+        goldAliases: goldItems.map((e) => e.aliases),
         loose: gold.loose,
         kcalPred,
-        kcalGold: goldMealKcal([
-          { aliases: gold.aliases, query: gold.query, quantity: gold.quantity, unit: gold.unit, foodId: gold.foodId },
-        ]),
+        kcalGold: goldMealKcal(goldItems),
         unmatched: entries.filter((e) => e == null).length,
         ms: Date.now() - started,
         error: row.error,
@@ -130,7 +129,7 @@ const summary = { text: summarize(by.text), image: summarize(by.image), all: sum
 const report = [
   `# OpenCal extract→USDA eval · ${tag} · ${new Date().toISOString()}`,
   '',
-  'Extracts from the VLM, calories from MiniSearch + convert_portion (no pick VLM). Text scoring applies the same refineExtracted host pass as the PWA.',
+  'Extracts from the VLM, calories from MiniSearch + convert_portion (host maps name/brand/qty/unit to a USDA row; no pick VLM). Text scoring applies the same refineExtracted host pass as the PWA.',
   '',
   formatSummary('Text', summary.text),
   formatSummary('Images', summary.image),

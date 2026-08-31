@@ -1,8 +1,8 @@
 import { extractFoods, isQuickCalorie, refineExtracted } from './extract'
-import { candidateLines, entryFromFood, quickAddEntry, referenceFitsItem, searchForItem, unmatchedEntry } from './foods'
+import { entryFromFood, mapToBaseFood, quickAddEntry, unmatchedEntry } from './foods'
 import { uid } from './storage'
-import { extractMealPhoto, extractMealText, pickFoodMatch } from './vlm'
-import type { DebugPath, ExtractedItem, Food, LogEntry } from '../types'
+import { extractMealPhoto, extractMealText } from './vlm'
+import type { DebugPath, ExtractedItem, LogEntry } from '../types'
 
 export type JobProgress = {
   message: string
@@ -36,29 +36,12 @@ function stamp(entry: LogEntry, meta: {
   }
 }
 
-function preferReference(item: ExtractedItem, picked: Food | null, hits: Food[], meal: string): Food | null {
-  const brand = item.brand?.trim().toLowerCase()
-  const hay = `${meal} ${item.query} ${item.unit ?? ''}`.toLowerCase()
-  let food = picked
-  if (brand && food && !food.name.toLowerCase().includes(brand)) {
-    food = hits.find((h) => h.name.toLowerCase().includes(brand)) ?? food
-  }
-  if (/\bgrande\b/.test(hay)) {
-    const grande = hits.find(
-      (h) => /grande/i.test(h.name) && (!brand || h.name.toLowerCase().includes(brand)),
-    )
-    if (grande) food = grande
-  }
-  return food
-}
-
-async function matchOne(
+function matchOne(
   meal: string,
   item: ExtractedItem,
   date: string,
   source: LogEntry['source'],
-  onProgress?: JobHandlers['onProgress'],
-): Promise<{ entry: LogEntry; raw: string; path: DebugPath; error?: string; ms: number }> {
+): { entry: LogEntry; raw: string; path: DebugPath; error?: string; ms: number } {
   const started = performance.now()
   if (item.caloriesHint && !item.query) {
     return {
@@ -69,25 +52,6 @@ async function matchOne(
     }
   }
 
-  const hits = searchForItem(item, 8)
-  if (!hits.length) {
-    return {
-      entry: unmatchedEntry(item, source, date),
-      raw: '(no search hits)',
-      path: 'vlm',
-      ms: Math.round(performance.now() - started),
-    }
-  }
-
-  const rows = candidateLines(hits, item)
-  onProgress?.({ message: `Matching ${item.query}…`, pct: 0 })
-  const picked = await pickFoodMatch(
-    meal,
-    item,
-    rows.map((r) => r.line),
-  )
-  const pickedFood =
-    picked.decision.index != null ? rows[picked.decision.index]?.food ?? null : null
   const resolved: ExtractedItem = {
     ...item,
     quantity: item.quantity,
@@ -95,36 +59,21 @@ async function matchOne(
     brand: item.brand ?? null,
     query: item.query,
   }
-
-  // Honor pick-null: no USDA row in context → unmatched, do not invent hits[0].
-  if (picked.decision.index == null) {
+  const mapped = mapToBaseFood(resolved, meal)
+  if (!mapped) {
     return {
       entry: unmatchedEntry(resolved, source, date),
-      raw: picked.raw,
-      path: picked.error ? 'error-fallback' : 'vlm',
-      error: picked.error,
-      ms: picked.ms,
-    }
-  }
-
-  const food = preferReference(item, pickedFood, hits, meal)
-
-  if (!food || !referenceFitsItem(item, food)) {
-    return {
-      entry: unmatchedEntry(resolved, source, date),
-      raw: picked.raw,
-      path: picked.error ? 'error-fallback' : 'vlm',
-      error: picked.error,
-      ms: picked.ms,
+      raw: '(no USDA match)',
+      path: 'vlm',
+      ms: Math.round(performance.now() - started),
     }
   }
 
   return {
-    entry: entryFromFood(food, resolved, source, date),
-    raw: picked.raw,
-    path: picked.error ? 'error-fallback' : 'vlm',
-    error: picked.error,
-    ms: picked.ms,
+    entry: entryFromFood(mapped.food, resolved, source, date),
+    raw: mapped.citation,
+    path: 'vlm',
+    ms: Math.round(performance.now() - started),
   }
 }
 
@@ -144,8 +93,8 @@ async function resolveItems(
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const pct = 28 + Math.round(((i + 0.2) / n) * 68)
-    handlers.onProgress?.({ message: `Matching ${item.query}…`, pct })
-    const result = await matchOne(meal, item, date, source, handlers.onProgress)
+    handlers.onProgress?.({ message: `Looking up USDA for ${item.query}…`, pct })
+    const result = matchOne(meal, item, date, source)
     const entry = stamp(result.entry, {
       batchId,
       input: meal,

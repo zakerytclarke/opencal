@@ -2,10 +2,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { logFromPhoto, logFromText } from '../../src/lib/pipeline.ts'
-import { goldMealKcal } from './gold.ts'
+import { goldMealKcal, imageExpect } from './gold.ts'
 import { formatSummary, scoreCase, summarize } from './metrics.ts'
 import { setupLocalFoods } from './setup.ts'
-import type { CaseScore, EvalSplit, ImageCase, ImageSplitFile, TextCase, TextSplitFile } from './types.ts'
+import { imageCasesFor, loadAllImageSplits } from './image-splits.ts'
+import type { CaseScore, EvalSplit, TextCase, TextSplitFile } from './types.ts'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 
@@ -36,22 +37,10 @@ const limit = Number(arg('limit', '0')) || 0
 await setupLocalFoods()
 
 const textFile = loadJson<TextSplitFile>(join(root, 'evals/splits/text.json'))
-const imageFile = loadJson<ImageSplitFile>(join(root, 'evals/splits/images.json'))
-const fooddPath = join(root, 'evals/splits/images.foodd.json')
-const fooddFile = existsSync(fooddPath) ? loadJson<ImageSplitFile>(fooddPath) : null
 
 const textCases: TextCase[] =
   split === 'train' ? textFile.train : split === 'test' ? textFile.test : [...textFile.train, ...textFile.test]
-const imageCases: ImageCase[] = [
-  ...(split === 'train' ? imageFile.train : split === 'test' ? imageFile.test : [...imageFile.train, ...imageFile.test]),
-  ...(fooddFile
-    ? split === 'train'
-      ? fooddFile.train
-      : split === 'test'
-        ? fooddFile.test
-        : [...fooddFile.train, ...fooddFile.test]
-    : []),
-]
+const imageCases = imageCasesFor(split, loadAllImageSplits(root))
 
 const scores: CaseScore[] = []
 const runText = modality === 'text' || modality === 'both'
@@ -103,9 +92,8 @@ if (runText) {
 
 if (runImages) {
   for (const row of take(imageCases, limit)) {
-    const gold = goldMealKcal([
-      { aliases: row.aliases, query: row.query, quantity: row.quantity, unit: row.unit, foodId: row.foodId },
-    ])
+    const goldItems = imageExpect(row)
+    const gold = goldMealKcal(goldItems)
     const abs = resolve(root, row.path)
     const started = Date.now()
     if (!existsSync(abs)) {
@@ -117,7 +105,7 @@ if (runImages) {
           modality: 'image',
           source: row.source,
           predictedNames: [],
-          goldAliases: [row.aliases],
+          goldAliases: goldItems.map((e) => e.aliases),
           loose: row.loose,
           kcalPred: 0,
           kcalGold: gold,
@@ -139,7 +127,7 @@ if (runImages) {
         modality: 'image',
         source: row.source,
         predictedNames: names,
-        goldAliases: [row.aliases],
+        goldAliases: goldItems.map((e) => e.aliases),
         loose: row.loose,
         kcalPred,
         kcalGold: gold,
@@ -159,7 +147,7 @@ if (runImages) {
           modality: 'image',
           source: row.source,
           predictedNames: [],
-          goldAliases: [row.aliases],
+          goldAliases: goldItems.map((e) => e.aliases),
           loose: row.loose,
           kcalPred: 0,
           kcalGold: gold,
@@ -182,7 +170,7 @@ const byModality = {
 const report = [
   `# OpenCal pipeline eval · ${split} · ${new Date().toISOString()}`,
   '',
-  'Calories are production pipeline output vs USDA gold for the labeled food and serving. FooDD class folders supply image labels; per-100g table values are in evals/taxonomy/foodd.json.',
+  'Calories are production pipeline output vs USDA gold for the labeled food and serving. The VLM extracts name/brand/qty/unit; the host maps to a USDA row. FooDD class folders and Nutrition5k identification plates supply extra image labels.',
   '',
   runText ? formatSummary('Text', summarize(byModality.text)) : '',
   runImages ? formatSummary('Images', summarize(byModality.image)) : '',

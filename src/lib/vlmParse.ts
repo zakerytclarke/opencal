@@ -25,7 +25,7 @@ Rules:
 - quantity is a number. unit is the household word the user said: large, medium, small, slice, cup, tbsp, tsp, oz, g, fl oz, bowl, handful, can, bottle, grande, tall, bar.
 - Fruit, drinks, snacks, and cooked dishes all count. Skip plates and utensils.
 - Only foods the user named. Never copy foods from examples.
-- Do not convert units, estimate grams, or invent calories. convert_portion and scale_nutrition run after a USDA row is picked.`
+- Do not convert units, estimate grams, invent calories, or pick a catalog letter. The host maps name and brand to a USDA row, then convert_portion and scale_nutrition convert quantity and unit.`
 
 export const EXTRACT_PREFIX = '{"foods":['
 
@@ -43,7 +43,9 @@ Reply with JSON only, never a caption:
 {"foods":[{"name":"apple","brand":null,"quantity":1,"unit":"medium"}]}
 Count every distinct piece. Three apples is quantity 3, not 1. Six pizza slices is quantity 6 unit slice. Two eggs is quantity 2 unit large. A bunch still attached is that many items, not one bunch.
 Split a mixed bowl into the foods you can see (tofu, eggs, corn, …), not one generic "bowl".
-Use household units (medium, slice, cup, tbsp, oz, piece). Do not estimate grams or calories.
+name is a short grocery name. brand is a readable package or logo, else null.
+quantity is how many pieces or servings you see. unit is the household word: medium, large, small, slice, cup, tbsp, oz, piece, bar.
+The host maps name and brand to a USDA row, then convert_portion converts quantity and unit. Do not estimate grams or calories or pick a catalog letter.
 Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not invent sides that are not in the photo.`
 
 export const PHOTO_EXTRACT_USER = 'What foods are in this photo? Count items and name household units. Do not estimate grams or calories.'

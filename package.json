@@ -21,6 +21,7 @@
     "eval:images": "tsx scripts/eval/run.ts --split test --modality images",
     "eval:train": "tsx scripts/eval/run.ts --split train --modality both",
     "eval:prepare": "tsx scripts/eval/prepare-foodd.ts",
+    "eval:prepare-n5k": "tsx scripts/eval/prepare-n5k.ts",
     "ft:prepare": "/home/zclarke/ml_env/bin/python scripts/finetune/prepare.py",
     "ft:train": "/home/zclarke/ml_env/bin/python scripts/finetune/train.py",
     "ft:infer": "/home/zclarke/ml_env/bin/python scripts/finetune/infer.py",
