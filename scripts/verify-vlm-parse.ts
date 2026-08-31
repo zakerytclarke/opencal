@@ -406,6 +406,20 @@ const rows: Row[] = [
       }
     },
   },
+  {
+    id: 29,
+    kind: 'text',
+    name: 'Grande wins over a guessed cup on a Starbucks latte',
+    input: 'Starbucks grande latte',
+    expect: 'grande Starbucks latte',
+    run() {
+      const items = refineExtracted(
+        [{ raw: this.input, query: 'starbucks grande latte', quantity: 1, unit: 'cup' }],
+        this.input,
+      )
+      return { pass: items[0]?.unit === 'grande', got: foodsLine(items) }
+    },
+  },
 ]
 
 const results = rows.map((row) => {
