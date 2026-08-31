@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { BottomBar } from '../components/BottomBar'
 import { FoodBatchCard } from '../components/FoodBatch'
 import { LogJobCard } from '../components/LogJobCard'
@@ -38,7 +37,6 @@ export function Home({
   onPhoto,
   onReset,
 }: Props) {
-  const [debug, setDebug] = useState(true)
   const entries = diary[date] ?? []
   const batches = groupBatches(entries)
   const t = totals(entries)
@@ -96,9 +94,6 @@ export function Home({
         <div className="foods-head">
           <h2>Foods</h2>
           <div className="foods-actions">
-            <button type="button" className={`text-btn${debug ? ' is-on' : ''}`} onClick={() => setDebug((v) => !v)}>
-              Debug {debug ? 'on' : 'off'}
-            </button>
             <button type="button" className="text-btn" onClick={onSearch}>
               Add
             </button>
@@ -110,7 +105,7 @@ export function Home({
         {entries.length === 0 && jobs.length === 0 ? (
           <p className="empty">Nothing logged yet. Search, speak, or snap a photo.</p>
         ) : (
-          batches.map((batch) => <FoodBatchCard key={batch.id} batch={batch} debug={debug} onDelete={onDelete} />)
+          batches.map((batch) => <FoodBatchCard key={batch.id} batch={batch} onDelete={onDelete} />)
         )}
       </section>
 

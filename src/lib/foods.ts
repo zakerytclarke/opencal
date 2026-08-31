@@ -62,11 +62,42 @@ function rank(query: string, food: Food, miniScore: number): number {
   else if (wordBoundaryHas(name, q) || aliases.some((a) => wordBoundaryHas(a, q))) score += 20
   score -= Math.min(36, Math.max(0, name.length - q.length) * 0.28)
   if (/baby ?food|baby toddler|\binfant\b/.test(name)) score -= 90
-  if (/as ingredient/.test(name)) score -= 22
+  if (/as ingredient|for use (on|with)/.test(name)) score -= 22
+  if (/,?\s*dry\b|dry mix|artificially flavored/.test(name) && !/\bmix\b/.test(q)) score -= 40
   if ((q === 'egg' || q === 'eggs') && /white|yolk|noodle|bread|bagel|foo yung|roll/.test(name)) score -= 50
   if ((q === 'egg' || q === 'eggs') && /whole|scrambled/.test(name)) score += 22
   if ((q === 'banana' || q === 'bananas') && /pepper/.test(name)) score -= 60
   if ((q === 'banana' || q === 'bananas') && /\braw\b/.test(name)) score += 18
+  const flavorAsked =
+    /\b(chocolate|vanilla|strawberry|blueberry|mango|peach|pumpkin|coconut|apricot|pineapple)\b/.test(q)
+  if (!flavorAsked) {
+    if (
+      /\b(chocolate|vanilla|strawberry|blueberry|mango|peach|pumpkin spice|coconut)\b/.test(name) &&
+      /\b(milk|yogurt|latte|bar)\b/.test(name)
+    ) {
+      score -= 22
+    }
+    if (/\bplain\b/.test(name) && /\b(yogurt|milk)\b/.test(name)) score += 16
+  }
+  const words = q.split(/\s+/).filter((w) => w.length > 1)
+  if (words.length >= 2) {
+    const covered = words.filter((w) => name.includes(w) || aliases.some((a) => a.includes(w))).length
+    if (covered === words.length) score += 52
+    else if (covered === words.length - 1) score += 16
+  }
+  if (/\bturkey\b/.test(q) && !/\bturkey\b/.test(name) && !aliases.some((a) => /\bturkey\b/.test(a))) score -= 70
+  if (/\bbacon\b/.test(q) && !/\bturkey\b/.test(q) && /\bturkey\b/.test(name)) score -= 28
+  if (/almond milk/.test(q) && /almond milk/.test(name)) score += 40
+  if (/egg white/.test(q) && /egg white/.test(name)) score += 40
+  if (/greek yogurt|yogurt, greek/.test(q) && /greek/.test(name) && /yogurt/.test(name)) score += 36
+  if (/starbucks|grande/.test(q) && /starbucks/.test(name)) score += 44
+  if (/big mac/.test(q) && /big mac/.test(name)) score += 55
+  if (/\bkind\b/.test(q) && /kind bar/.test(name)) score += 48
+  if (/chobani/.test(q) && /chobani/.test(name)) score += 48
+  if (/chipotle/.test(q) && /chipotle/.test(name) && !/dip/.test(name)) score += 36
+  if (/\bmuffin/.test(q) && /cereal/.test(name)) score -= 50
+  if (/\bmuffin/.test(q) && /^(muffin|muffins),/.test(name)) score += 28
+  if (/commercially prepared/.test(name) && words.some((w) => name.includes(w))) score += 12
   if (food.source === 'fndds') score += 10
   if (food.source === 'compiled') score += 16
   return score

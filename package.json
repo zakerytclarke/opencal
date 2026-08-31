@@ -10,8 +10,9 @@
     "preview": "vite preview --host",
     "db": "python3 scripts/build-food-db.py",
     "test:e2e": "node scripts/e2e.mjs",
-    "test": "tsx scripts/verify-vlm-parse.ts",
+    "test": "tsx scripts/verify-vlm-parse.ts && tsx scripts/verify-food-search.ts",
     "test:parse": "tsx scripts/verify-vlm-parse.ts",
+    "test:search": "tsx scripts/verify-food-search.ts",
     "test:vlm": "tsx scripts/vlm-smoke.ts"
   },
   "dependencies": {

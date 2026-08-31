@@ -271,6 +271,41 @@ const rows: Row[] = [
       return { pass: p.index === 0 && p.quantity === 2 && /pizza/i.test(p.name ?? ''), got }
     },
   },
+  {
+    id: 21,
+    kind: 'text',
+    name: 'Turkey bacon stays one food',
+    input: '{"foods":[{"name":"turkey bacon","quantity":2,"unit":"slice"}]}',
+    expect: '2 slice turkey bacon',
+    run() {
+      const items = parseExtractedFoods(this.input)
+      const got = foodsLine(items)
+      return {
+        pass: items.length === 1 && items[0].quantity === 2 && /turkey bacon/i.test(items[0].query),
+        got,
+      }
+    },
+  },
+  {
+    id: 22,
+    kind: 'text',
+    name: 'Branded Chipotle + KIND + Chobani extract',
+    input:
+      '{"foods":[{"name":"chicken bowl","brand":"Chipotle","quantity":1,"unit":"bowl"},{"name":"bar","brand":"KIND","quantity":1,"unit":"bar"},{"name":"greek yogurt","brand":"Chobani","quantity":1,"unit":"cup"}]}',
+    expect: 'Chipotle chicken bowl · KIND bar · Chobani greek yogurt',
+    run() {
+      const items = parseExtractedFoods(this.input)
+      const got = foodsLine(items)
+      return {
+        pass:
+          items.length === 3 &&
+          items[0].brand === 'Chipotle' &&
+          items[1].brand === 'KIND' &&
+          items[2].brand === 'Chobani',
+        got,
+      }
+    },
+  },
 ]
 
 const results = rows.map((row) => {
