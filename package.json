@@ -20,7 +20,13 @@
     "eval:text": "tsx scripts/eval/run.ts --split test --modality text",
     "eval:images": "tsx scripts/eval/run.ts --split test --modality images",
     "eval:train": "tsx scripts/eval/run.ts --split train --modality both",
-    "eval:prepare": "tsx scripts/eval/prepare-foodd.ts"
+    "eval:prepare": "tsx scripts/eval/prepare-foodd.ts",
+    "ft:prepare": "python3 scripts/finetune/prepare.py",
+    "ft:train": "python3 scripts/finetune/train.py",
+    "ft:infer": "python3 scripts/finetune/infer.py",
+    "ft:score": "tsx scripts/eval/score-extracts.ts",
+    "ft:compare": "python3 scripts/finetune/compare.py",
+    "ft:run": "bash scripts/finetune/run.sh"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

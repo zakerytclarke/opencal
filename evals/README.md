@@ -30,3 +30,8 @@ npm run eval:images
 Results: `evals/results/latest.md` (MAE, MAPE, % within 20/50 kcal relative, name accuracy, MAE on correctly named foods).
 
 `npm test` covers metric helpers only. These evals are slow (on-device VLM) and are not part of CI.
+
+## Fine-tune (LFM2.5-VL-450M)
+
+See `scripts/finetune/README.md`. Mix USDA synth + Nutrition5k plates + coach dialogue, full-FT on a local GPU, then compare **meal calorie MAE** on the frozen test split (`evals/results/ft-compare.md`). The test strings in `evals/splits/*.json` never go into training.
+

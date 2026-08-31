@@ -26,4 +26,9 @@ screenshots/
 evals/data/
 evals/results/*
 !evals/results/.gitkeep
+!evals/results/ft-compare.md
+!evals/results/ft-baseline.md
+!evals/results/ft-finetuned.md
 evals/splits/images.foodd.json
+scripts/__pycache__/
+scripts/**/__pycache__/
