@@ -20,6 +20,15 @@ export function clearProfile(): void {
   localStorage.removeItem(PROFILE_KEY)
 }
 
+export function clearDiary(): void {
+  localStorage.removeItem(DIARY_KEY)
+}
+
+export function clearAllData(): void {
+  clearProfile()
+  clearDiary()
+}
+
 export function loadDiary(): Diary {
   try {
     const raw = localStorage.getItem(DIARY_KEY)

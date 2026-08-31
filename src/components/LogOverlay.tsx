@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import { isQuickCalorie } from '../lib/extract'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { extractFoods, isQuickCalorie, looksLikeSentence } from '../lib/extract'
+import { filterRecents, recentLoggedFoods } from '../lib/diary'
+import { entryFromFood, repeatEntry, searchFoods } from '../lib/foods'
 import { canListen, listen, type SpeechHandle } from '../lib/speech'
 import { warmupVlm } from '../lib/vlm'
+import type { Diary, ExtractedItem, Food, LogEntry } from '../types'
 
 export type LogKind = 'search' | 'voice' | 'photo'
 
@@ -11,12 +14,48 @@ export type QueuePayload =
 
 type Props = {
   kind: LogKind
+  date: string
+  diary: Diary
   onClose: () => void
   onQueue: (payload: QueuePayload) => void
   onQuick?: (kcal: number, raw: string) => void
+  onInstant?: (entry: LogEntry) => void
 }
 
-export function LogOverlay({ kind, onClose, onQueue, onQuick }: Props) {
+function SuggestRow({
+  emoji,
+  name,
+  sub,
+  kcal,
+  badge,
+  onClick,
+}: {
+  emoji: string
+  name: string
+  sub: string
+  kcal: number
+  badge?: string
+  onClick: () => void
+}) {
+  return (
+    <button type="button" className="result suggest-row" onClick={onClick}>
+      <span className="food-emoji" aria-hidden>
+        {emoji}
+      </span>
+      <span className="food-main">
+        <span className="food-name">{name}</span>
+        <span className="food-sub">
+          {badge ? `${badge} · ` : ''}
+          {sub}
+        </span>
+      </span>
+      <span className="food-kcal">{Math.round(kcal)}</span>
+      <span className="suggest-add">Add</span>
+    </button>
+  )
+}
+
+export function LogOverlay({ kind, date, diary, onClose, onQueue, onQuick, onInstant }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const rec = useRef<SpeechHandle | null>(null)
   const [query, setQuery] = useState('')
@@ -26,6 +65,16 @@ export function LogOverlay({ kind, onClose, onQueue, onQuick }: Props) {
     return 'compose'
   })
   const [error, setError] = useState(voiceOk ? '' : 'Voice is not available in this browser.')
+
+  const recents = useMemo(() => recentLoggedFoods(diary, 12), [diary])
+  const recentHits = useMemo(() => filterRecents(recents, query).slice(0, 6), [recents, query])
+  const dbHits = useMemo(() => {
+    const q = query.trim()
+    if (q.length < 2 || looksLikeSentence(q) || isQuickCalorie(q) != null) return []
+    const recentIds = new Set(recentHits.map((e) => e.foodId))
+    return searchFoods(q, 8).filter((food) => !recentIds.has(food.id))
+  }, [query, recentHits])
+  const quickCal = isQuickCalorie(query)
 
   useEffect(() => {
     warmupVlm()
@@ -64,8 +113,28 @@ export function LogOverlay({ kind, onClose, onQueue, onQuick }: Props) {
     onClose()
   }
 
+  function pickRecent(entry: LogEntry) {
+    onInstant?.(repeatEntry(entry, date))
+    onClose()
+  }
+
+  function pickMatch(food: Food) {
+    const parsed = extractFoods(query)[0]
+    const item: ExtractedItem = {
+      raw: query,
+      query: parsed?.query || query.trim() || food.name,
+      brand: parsed?.brand ?? null,
+      quantity: parsed?.quantity ?? 1,
+      unit: parsed?.unit ?? null,
+    }
+    onInstant?.(entryFromFood(food, item, 'search', date))
+    onClose()
+  }
+
+  const showSuggest = kind === 'search' && (recentHits.length > 0 || dbHits.length > 0 || quickCal != null)
+
   return (
-    <div className="log-overlay" role="dialog" aria-label="Log food">
+    <div className={`log-overlay${kind === 'search' ? ' is-search' : ''}`} role="dialog" aria-label="Log food">
       <button type="button" className="text-btn log-close" onClick={onClose}>
         Close
       </button>
@@ -100,9 +169,57 @@ export function LogOverlay({ kind, onClose, onQueue, onQuick }: Props) {
             autoFocus
           />
           <button type="submit" className="primary" disabled={!query.trim()}>
-            Log
+            {quickCal != null ? `Quick add ${quickCal}` : 'Log'}
           </button>
         </form>
+      )}
+
+      {showSuggest && (
+        <div className="log-suggest">
+          {quickCal != null && (
+            <SuggestRow
+              emoji="⚡"
+              name={`Quick add ${quickCal}`}
+              sub="Calories only"
+              kcal={quickCal}
+              onClick={() => {
+                onQuick?.(quickCal, query)
+                onClose()
+              }}
+            />
+          )}
+          {recentHits.length > 0 && (
+            <>
+              <div className="suggest-label">{query.trim() ? 'From your log' : 'Recently logged'}</div>
+              {recentHits.map((entry) => (
+                <SuggestRow
+                  key={entry.id}
+                  emoji={entry.emoji}
+                  name={entry.name}
+                  sub={`${entry.brand ? `${entry.brand} · ` : ''}${entry.serveLabel}`}
+                  kcal={entry.kcal}
+                  badge="Logged"
+                  onClick={() => pickRecent(entry)}
+                />
+              ))}
+            </>
+          )}
+          {dbHits.length > 0 && (
+            <>
+              <div className="suggest-label">Best matches</div>
+              {dbHits.map((food) => (
+                <SuggestRow
+                  key={food.id}
+                  emoji={food.emoji}
+                  name={food.name}
+                  sub={food.serveLabel}
+                  kcal={Math.round(food.kcal * (food.serveG / 100))}
+                  onClick={() => pickMatch(food)}
+                />
+              ))}
+            </>
+          )}
+        </div>
       )}
 
       {kind !== 'search' && <p className="log-copy">{error || query || (kind === 'voice' ? 'Listening…' : 'Opening camera…')}</p>}
@@ -112,7 +229,9 @@ export function LogOverlay({ kind, onClose, onQueue, onQuick }: Props) {
           ? 'Try again or type it'
           : kind === 'voice'
             ? 'Speak your meal'
-            : 'Logs in the background · keep adding'}
+            : kind === 'search'
+              ? 'Tap a food to add it, or log a full meal'
+              : 'Logs in the background · keep adding'}
       </p>
 
       <input

@@ -283,6 +283,26 @@ export function unmatchedEntry(item: ExtractedItem, source: LogEntry['source'], 
   }
 }
 
+export function repeatEntry(entry: LogEntry, date: string): LogEntry {
+  return {
+    id: uid(),
+    date,
+    foodId: entry.foodId,
+    name: entry.name,
+    brand: entry.brand,
+    emoji: entry.emoji,
+    grams: entry.grams,
+    servings: entry.servings,
+    serveLabel: entry.serveLabel,
+    kcal: entry.kcal,
+    protein: entry.protein,
+    carbs: entry.carbs,
+    fat: entry.fat,
+    source: 'search',
+    loggedAt: new Date().toISOString(),
+  }
+}
+
 export function quickAddEntry(kcal: number, date: string, name = 'Quick add'): LogEntry {
   return {
     id: uid(),

@@ -106,20 +106,56 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 .goal-macros b { display: block; color: var(--hero); font-size: 18px; }
 
 .eyebrow { color: var(--lake); font-weight: 800; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
-.avatar {
-  width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--sky); color: var(--lake); font-weight: 800;
+.icon-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--sky); color: var(--lake);
+  display: grid; place-items: center;
 }
 
-.week-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 18px 0; }
-.week-day {
-  border: 0; background: transparent; display: grid; justify-items: center; gap: 6px; color: var(--slate); padding: 0;
+.date-nav {
+  display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px;
+  margin: 6px 0 18px;
 }
-.week-letter { font-size: 12px; font-weight: 700; }
-.week-day.is-on .week-letter { color: var(--lake); }
-.week-empty {
-  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); font-size: 12px; font-weight: 700;
+.date-arrow {
+  width: 44px; height: 44px; border: 0; border-radius: 14px; background: var(--card); color: var(--hero);
+  display: grid; place-items: center;
 }
-.week-day.is-on .week-empty { background: var(--sky); color: var(--lake); }
+.date-nav-label {
+  border: 0; background: transparent; text-align: center; padding: 4px 8px; min-width: 0;
+}
+.date-nav-title { display: block; font-size: 28px; font-weight: 800; letter-spacing: -0.04em; color: var(--hero); }
+.date-nav-sub { display: block; margin-top: 2px; color: var(--slate); font-size: 13px; font-weight: 650; }
+
+.cal-sheet { text-align: left; }
+.cal-month-row { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; margin: 8px 0 14px; }
+.cal-month-label { text-align: center; font-weight: 750; color: var(--hero); }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow { text-align: center; font-size: 11px; font-weight: 750; color: var(--mute); letter-spacing: 0.04em; padding: 4px 0 8px; }
+.cal-day {
+  border: 0; background: transparent; border-radius: 14px; padding: 8px 0 6px; color: var(--hero);
+  display: grid; justify-items: center; gap: 2px; min-height: 52px;
+}
+.cal-day.is-out { color: var(--mute); }
+.cal-day.is-today { box-shadow: inset 0 0 0 1px #3b4a5a; }
+.cal-day.is-on { background: var(--sky); color: var(--lake); }
+.cal-num { font-size: 14px; font-weight: 750; }
+.cal-dot { width: 12px; height: 12px; }
+.cal-check { color: var(--under); }
+.cal-day.is-on .cal-check { color: var(--lake); }
+.cal-today { width: 100%; margin-top: 14px; }
+
+.settings-card { background: var(--card); border-radius: 16px; padding: 14px 16px; margin: 8px 0 16px; }
+.settings-lead { margin: 0 0 8px; color: var(--hero); font-weight: 650; }
+.settings-goal { margin: 0; color: var(--slate); display: grid; gap: 2px; }
+.settings-goal b { color: var(--hero); font-size: 28px; letter-spacing: -0.03em; }
+.settings-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.settings-row {
+  width: 100%; text-align: left; border: 1px solid var(--divider); background: var(--card);
+  border-radius: 14px; padding: 14px 16px;
+}
+.settings-row b { display: block; color: var(--hero); }
+.settings-row small { display: block; color: var(--slate); margin-top: 2px; }
+.settings-row.is-danger b { color: #fca5a5; }
+.settings-note { margin-top: 16px; }
 
 .card {
   background: var(--card); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 14px;
@@ -255,6 +291,15 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
   width: 100%; border: 1px solid var(--divider); background: var(--card);
   border-radius: 16px; padding: 16px; color: var(--hero); font-size: 18px;
 }
+.log-overlay.is-search { text-align: left; max-height: 88dvh; overflow: auto; }
+.log-overlay.is-search .primary { margin-top: 0; }
+.log-suggest { margin-top: 4px; background: var(--card); border-radius: 16px; overflow: hidden; }
+.suggest-label {
+  padding: 10px 12px 4px; font-size: 11px; font-weight: 750; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--mute);
+}
+.suggest-row { width: 100%; }
+.suggest-add { color: var(--lake); font-size: 12px; font-weight: 750; padding-right: 4px; }
 
 @media (min-width: 800px) {
   body { padding: 24px 0; }

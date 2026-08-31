@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { LogOverlay, type LogKind, type QueuePayload } from './components/LogOverlay'
-import { addEntries, clearProfile, loadDiary, loadProfile, removeEntry, saveProfile, uid } from './lib/storage'
+import { addEntries, clearAllData, clearDiary, clearProfile, loadDiary, loadProfile, removeEntry, saveProfile, uid } from './lib/storage'
 import { loadFoods, quickAddEntry } from './lib/foods'
 import { logFromPhoto, logFromText } from './lib/pipeline'
 import { warmupVlm } from './lib/vlm'
@@ -143,9 +143,26 @@ export default function App() {
     setDiary((d) => removeEntry(d, date, id))
   }
 
-  function reset() {
-    if (!confirm('Start over and clear your plan? Food logs stay on this device.')) return
+  function instantLog(entry: LogEntry) {
+    addLogged([entry])
+    speak(`Logged ${entry.name}. ${Math.round(entry.kcal)} calories.`)
+  }
+
+  function resetOnboarding() {
     clearProfile()
+    setProfile(null)
+  }
+
+  function deleteLogs() {
+    clearDiary()
+    setDiary({})
+    setJobs([])
+  }
+
+  function deleteAll() {
+    clearAllData()
+    setDiary({})
+    setJobs([])
     setProfile(null)
   }
 
@@ -173,13 +190,23 @@ export default function App() {
           onVoice={() => setFlow('voice')}
           onSearch={() => setFlow('search')}
           onPhoto={() => setFlow('photo')}
-          onReset={reset}
+          onResetOnboarding={resetOnboarding}
+          onDeleteLogs={deleteLogs}
+          onDeleteAll={deleteAll}
         />
       )}
 
       {profile && flow && <div className="backdrop" onClick={() => setFlow(null)} />}
       {profile && flow && (
-        <LogOverlay kind={flow} onClose={() => setFlow(null)} onQueue={queuePayload} onQuick={quickLog} />
+        <LogOverlay
+          kind={flow}
+          date={date}
+          diary={diary}
+          onClose={() => setFlow(null)}
+          onQueue={queuePayload}
+          onQuick={quickLog}
+          onInstant={instantLog}
+        />
       )}
     </div>
   )
