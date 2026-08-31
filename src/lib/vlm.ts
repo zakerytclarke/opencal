@@ -1,5 +1,13 @@
 import { extractFoods } from './extract'
 import type { DebugPath, ExtractedItem } from '../types'
+import {
+  PHOTO_USER_PROMPT,
+  SYSTEM_PROMPT,
+  itemsFromModelText,
+  parseToolCalls,
+  stripSpecialTokens,
+  textUserPrompt,
+} from './vlmParse'
 
 export type AnalyzeResult = {
   raw: string
@@ -21,17 +29,28 @@ export type VlmStatus = {
 
 type ProgressFn = (message: string, pct?: number) => void
 
+type TensorLike = { dims: number[] }
+
 type Session = {
   processor: {
-    apply_chat_template: (messages: unknown[], opts: { add_generation_prompt: boolean }) => string
+    apply_chat_template: (
+      messages: unknown[],
+      opts: { add_generation_prompt: boolean; tokenize?: boolean },
+    ) => string
+    tokenizer: (
+      text: string,
+      opts?: { add_special_tokens?: boolean },
+    ) => Promise<{ input_ids: TensorLike } & Record<string, unknown>>
     batch_decode: (ids: unknown, opts: { skip_special_tokens: boolean }) => string[]
   }
   model: {
     generate: (opts: Record<string, unknown>) => Promise<unknown>
   }
-  runProcessor: (image: unknown, prompt: string) => Promise<{ input_ids: { dims: number[] } } & Record<string, unknown>>
-  runText: (prompt: string) => Promise<{ input_ids: { dims: number[] } } & Record<string, unknown>>
-  loadImage: (url: string) => Promise<unknown>
+  runProcessor: (
+    image: unknown,
+    prompt: string,
+  ) => Promise<{ input_ids: TensorLike } & Record<string, unknown>>
+  loadImage: (input: Blob | string) => Promise<unknown>
 }
 
 let session: Session | null = null
@@ -56,22 +75,33 @@ export function subscribeVlm(fn: (s: VlmStatus) => void): () => void {
   }
 }
 
-const SYSTEM = `You are OpenCal's on-device food logger.
-The user will describe a meal in text or show a photo.
-Identify every distinct food or drink.
-Reply with JSON only — no markdown, no prose.
-Format:
-{"tools":[{"name":"search_foods","arguments":{"query":"scrambled eggs","quantity":2,"unit":"large"}}]}
-Rules:
-- One search_foods call per distinct item.
-- query is a short common grocery name (banana, grilled chicken, brown rice).
-- quantity is a number. unit is optional: medium, large, slice, cup, oz, g, bowl, tbsp.
-- Estimate portions. Skip plates, utensils, and napkins.`
-
-const PHOTO_USER = 'Log the foods in this photo using search_foods tool calls.'
-
 function hasWebGpu(): boolean {
-  return Boolean((navigator as Navigator & { gpu?: unknown }).gpu)
+  return typeof navigator !== 'undefined' && Boolean((navigator as Navigator & { gpu?: unknown }).gpu)
+}
+
+function isNode(): boolean {
+  return typeof window === 'undefined'
+}
+
+type DType = 'fp16' | 'q4f16' | 'q4' | 'q8'
+
+function pickRuntime(): { device: 'webgpu' | 'wasm' | 'cpu'; dtype: Record<string, DType> } {
+  if (hasWebGpu()) {
+    return {
+      device: 'webgpu',
+      dtype: { embed_tokens: 'fp16', decoder_model_merged: 'q4f16', vision_encoder: 'fp16' },
+    }
+  }
+  if (isNode()) {
+    return {
+      device: 'cpu',
+      dtype: { embed_tokens: 'q4', decoder_model_merged: 'q4', vision_encoder: 'q4' },
+    }
+  }
+  return {
+    device: 'wasm',
+    dtype: { embed_tokens: 'q8', decoder_model_merged: 'q4', vision_encoder: 'q8' },
+  }
 }
 
 async function loadSession(onProgress?: ProgressFn): Promise<Session> {
@@ -81,10 +111,11 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
     setStatus({ state: 'downloading', message: 'Downloading on-device vision…', pct: 4 })
     onProgress?.('Downloading on-device vision…', 4)
     const tf = await import('@huggingface/transformers')
-    const gpu = hasWebGpu()
-    const device = gpu ? 'webgpu' : 'wasm'
-    setStatus({ message: gpu ? 'Preparing WebGPU…' : 'Preparing on-device runtime…', pct: 10 })
-    onProgress?.(gpu ? 'Preparing WebGPU…' : 'Preparing on-device runtime…', 10)
+    const { device, dtype } = pickRuntime()
+    const preparing =
+      device === 'webgpu' ? 'Preparing WebGPU…' : device === 'cpu' ? 'Preparing on-device runtime…' : 'Preparing on-device runtime…'
+    setStatus({ message: preparing, pct: 10 })
+    onProgress?.(preparing, 10)
 
     const processor = await tf.AutoProcessor.from_pretrained(VLM_ID, {
       progress_callback: (info: { status?: string; progress?: number; file?: string }) => {
@@ -101,9 +132,7 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
 
     const model = await tf.AutoModelForImageTextToText.from_pretrained(VLM_ID, {
       device,
-      dtype: gpu
-        ? { embed_tokens: 'fp16', decoder_model_merged: 'q4f16', vision_encoder: 'fp16' }
-        : { embed_tokens: 'q8', decoder_model_merged: 'q4', vision_encoder: 'q8' },
+      dtype,
       progress_callback: (info: { status?: string; progress?: number; file?: string }) => {
         if (info.status === 'progress' && info.progress != null) {
           const pct = 20 + Math.round(info.progress * 0.7)
@@ -115,24 +144,17 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
     })
 
     const ready: Session = {
-      processor: processor as Session['processor'],
+      processor: processor as unknown as Session['processor'],
       model: model as Session['model'],
       runProcessor: (image, prompt) =>
-        (processor as unknown as (img: unknown, text: string, opts: { add_special_tokens: boolean }) => Promise<{ input_ids: { dims: number[] } } & Record<string, unknown>>)(
-          image,
-          prompt,
-          { add_special_tokens: false },
-        ),
-      runText: async (prompt) => {
-        const call = processor as unknown as {
-          tokenizer?: (text: string, opts?: object) => Promise<{ input_ids: { dims: number[] } } & Record<string, unknown>>
-        } & ((text: string, opts?: object) => Promise<{ input_ids: { dims: number[] } } & Record<string, unknown>>)
-        if (typeof call.tokenizer === 'function') {
-          return call.tokenizer(prompt, { add_special_tokens: false })
-        }
-        return call(prompt, { add_special_tokens: false })
-      },
-      loadImage: (url) => tf.RawImage.fromURL(url),
+        (
+          processor as unknown as (
+            img: unknown,
+            text: string,
+            opts: { add_special_tokens: boolean },
+          ) => Promise<{ input_ids: TensorLike } & Record<string, unknown>>
+        )(image, prompt, { add_special_tokens: false }),
+      loadImage: (input) => tf.RawImage.read(input),
     }
     session = ready
     setStatus({ state: 'ready', message: 'Photo logging ready', pct: 100 })
@@ -157,79 +179,44 @@ export function isVlmReady(): boolean {
   return status.state === 'ready'
 }
 
-function parseToolCalls(text: string): { query: string; quantity: number; unit: string | null }[] {
-  const trimmed = text.trim()
-  const blobs: string[] = []
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fenced) blobs.push(fenced[1])
-  const firstBrace = trimmed.indexOf('{')
-  const lastBrace = trimmed.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace) blobs.push(trimmed.slice(firstBrace, lastBrace + 1))
-  blobs.push(trimmed)
-
-  for (const blob of blobs) {
-    try {
-      const parsed = JSON.parse(blob) as {
-        tools?: { name?: string; arguments?: { query?: string; quantity?: number; unit?: string } }[]
-        query?: string
-        foods?: { query?: string; name?: string; quantity?: number; unit?: string }[]
-      }
-      const fromTools = (parsed.tools ?? [])
-        .filter((t) => (t.name ?? 'search_foods') === 'search_foods')
-        .map((t) => ({
-          query: String(t.arguments?.query ?? '').trim(),
-          quantity: Number(t.arguments?.quantity) || 1,
-          unit: t.arguments?.unit ? String(t.arguments.unit) : null,
-        }))
-      if (fromTools.length) return fromTools.filter((t) => t.query)
-      if (parsed.foods?.length) {
-        return parsed.foods
-          .map((f) => ({
-            query: String(f.query ?? f.name ?? '').trim(),
-            quantity: Number(f.quantity) || 1,
-            unit: f.unit ? String(f.unit) : null,
-          }))
-          .filter((t) => t.query)
-      }
-      if (parsed.query) {
-        return [{ query: parsed.query, quantity: 1, unit: null }]
-      }
-    } catch {
-      // try next blob
-    }
-  }
-  return []
-}
-
-function itemsFromModelText(raw: string): ExtractedItem[] {
-  const calls = parseToolCalls(raw)
-  if (calls.length) {
-    return calls.map((c) => ({
-      raw,
-      query: c.query,
-      quantity: c.quantity,
-      unit: c.unit,
-    }))
-  }
-  return extractFoods(raw)
-}
-
 async function decodeGeneration(
   sess: Session,
-  inputs: { input_ids: { dims: number[] } } & Record<string, unknown>,
+  inputs: { input_ids: TensorLike } & Record<string, unknown>,
 ): Promise<string> {
   const outputs = await sess.model.generate({
     ...inputs,
-    max_new_tokens: 220,
-    temperature: 0.1,
+    max_new_tokens: 320,
+    do_sample: false,
     repetition_penalty: 1.05,
   })
   const start = inputs.input_ids.dims.at(-1) ?? 0
   const decoded = sess.processor.batch_decode(
     (outputs as { slice: (a: null, range: [number | null, null]) => unknown }).slice(null, [start, null]),
-    { skip_special_tokens: true },
+    { skip_special_tokens: false },
   )[0]
   return String(decoded ?? '').trim()
+}
+
+function finish(raw: string, items: ExtractedItem[], started: number, fallback?: string): AnalyzeResult {
+  const usedModel = parseToolCalls(raw).length > 0
+  const resolved = items.length ? items : fallback ? extractFoods(fallback) : []
+  return {
+    raw: stripSpecialTokens(raw) || raw,
+    items: resolved,
+    path: usedModel ? 'vlm' : 'vlm-empty',
+    ms: Math.round(performance.now() - started),
+  }
+}
+
+function fail(err: unknown, started: number, fallbackItems: ExtractedItem[]): AnalyzeResult {
+  const message = err instanceof Error ? err.message : String(err)
+  return {
+    raw: '',
+    items: fallbackItems,
+    path: 'error-fallback',
+    error: message,
+    ms: Math.round(performance.now() - started),
+  }
 }
 
 export async function analyzeMealPhoto(image: Blob, onProgress?: ProgressFn): Promise<AnalyzeResult> {
@@ -237,44 +224,25 @@ export async function analyzeMealPhoto(image: Blob, onProgress?: ProgressFn): Pr
   try {
     const sess = await loadSession(onProgress)
     onProgress?.('Reading the photo…', 82)
-    const url = URL.createObjectURL(image)
-    try {
-      const img = await sess.loadImage(url)
-      const messages = [
-        { role: 'system', content: SYSTEM },
-        {
-          role: 'user',
-          content: [
-            { type: 'image' },
-            { type: 'text', text: PHOTO_USER },
-          ],
-        },
-      ]
-      const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true })
-      const inputs = await sess.runProcessor(img, prompt)
-      onProgress?.('Finding foods…', 88)
-      const raw = await decodeGeneration(sess, inputs)
-      onProgress?.('Matching the local database…', 94)
-      const items = itemsFromModelText(raw)
-      const usedModel = parseToolCalls(raw).length > 0
-      return {
-        raw,
-        items: items.length ? items : extractFoods(raw),
-        path: usedModel ? 'vlm' : 'vlm-empty',
-        ms: Math.round(performance.now() - started),
-      }
-    } finally {
-      URL.revokeObjectURL(url)
-    }
+    const img = await sess.loadImage(image)
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: [
+          { type: 'image' },
+          { type: 'text', text: PHOTO_USER_PROMPT },
+        ],
+      },
+    ]
+    const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true })
+    const inputs = await sess.runProcessor(img, prompt)
+    onProgress?.('Finding foods…', 88)
+    const raw = await decodeGeneration(sess, inputs)
+    onProgress?.('Matching the local database…', 94)
+    return finish(raw, itemsFromModelText(raw), started)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return {
-      raw: '',
-      items: [],
-      path: 'error-fallback',
-      error: message,
-      ms: Math.round(performance.now() - started),
-    }
+    return fail(err, started, [])
   }
 }
 
@@ -284,30 +252,28 @@ export async function analyzeMealText(text: string, onProgress?: ProgressFn): Pr
     const sess = await loadSession(onProgress)
     onProgress?.('Running LFM2.5-VL…', 82)
     const messages = [
-      { role: 'system', content: SYSTEM },
-      { role: 'user', content: `Log this meal using search_foods tool calls:\n${text}` },
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: textUserPrompt(text) },
     ]
-    const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true })
-    const inputs = await sess.runText(prompt)
+    const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true, tokenize: false })
+    const inputs = await sess.processor.tokenizer(prompt, { add_special_tokens: false })
     onProgress?.('Finding foods…', 88)
     const raw = await decodeGeneration(sess, inputs)
     onProgress?.('Matching the local database…', 94)
-    const usedModel = parseToolCalls(raw).length > 0
-    const items = itemsFromModelText(raw)
-    return {
-      raw,
-      items: items.length ? items : extractFoods(text),
-      path: usedModel ? 'vlm' : 'vlm-empty',
-      ms: Math.round(performance.now() - started),
-    }
+    return finish(raw, itemsFromModelText(raw, text), started, text)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return {
-      raw: '',
-      items: extractFoods(text),
-      path: 'error-fallback',
-      error: message,
-      ms: Math.round(performance.now() - started),
-    }
+    return fail(err, started, extractFoods(text))
   }
+}
+
+if (typeof window !== 'undefined') {
+  Object.assign(window, {
+    __opencalVlm: {
+      getVlmStatus,
+      warmupVlm,
+      analyzeMealText,
+      analyzeMealPhoto,
+      isVlmReady,
+    },
+  })
 }

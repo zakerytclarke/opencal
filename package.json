@@ -9,7 +9,9 @@
     "lint": "oxlint",
     "preview": "vite preview --host",
     "db": "python3 scripts/build-food-db.py",
-    "test:e2e": "node scripts/e2e.mjs"
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:parse": "tsx scripts/verify-vlm-parse.ts",
+    "test:vlm": "tsx scripts/vlm-smoke.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
@@ -26,6 +28,7 @@
     "@vitejs/plugin-react": "^6.1.0",
     "oxlint": "^1.79.0",
     "playwright": "^1.55.0",
+    "tsx": "^4.23.13",
     "typescript": "~6.0.2",
     "vite": "^8.2.2"
   }

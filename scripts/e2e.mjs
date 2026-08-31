@@ -1,8 +1,12 @@
 import { chromium } from 'playwright'
 
 const base = process.env.OPENCAL_URL || 'http://127.0.0.1:4174'
+const vlmTimeout = Number(process.env.OPENCAL_VLM_TIMEOUT_MS || 12 * 60 * 1000)
 
-const browser = await chromium.launch({ headless: true })
+const browser = await chromium.launch({
+  headless: true,
+  args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan,UseSkiaRenderer'],
+})
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
 const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))
@@ -25,7 +29,39 @@ await page.waitForSelector('text=Quick add')
 
 const kcal = await page.locator('.stat b').first().innerText()
 if (Number(kcal.replace(/,/g, '')) !== 500) throw new Error(`expected 500 eaten, got ${kcal}`)
+console.log('e2e quick-add ok — eaten', kcal)
+
+const ready = await page.waitForFunction(
+  () => window.__opencalVlm?.getVlmStatus().state === 'ready' || window.__opencalVlm?.getVlmStatus().state === 'error',
+  { timeout: vlmTimeout },
+).then(() => page.evaluate(() => window.__opencalVlm?.getVlmStatus()))
+
+if (!ready || ready.state === 'error') {
+  throw new Error(`VLM did not become ready: ${JSON.stringify(ready)}`)
+}
+console.log('e2e model ready', ready)
+
+const text = await page.evaluate(async () => {
+  const result = await window.__opencalVlm.analyzeMealText('2 eggs and a banana')
+  return result
+})
+console.log('e2e text', text.path, text.items, text.raw.slice(0, 200), text.error ?? '')
+if (text.path === 'error-fallback') throw new Error(`text inference failed: ${text.error}`)
+if (!text.items.some((i) => /egg|banana/i.test(`${i.query} ${text.raw}`))) {
+  throw new Error(`text case missed eggs/banana: ${JSON.stringify(text)}`)
+}
+
+const photo = await page.evaluate(async () => {
+  const res = await fetch('/test-fixtures/banana.jpg')
+  const blob = await res.blob()
+  return window.__opencalVlm.analyzeMealPhoto(blob)
+})
+console.log('e2e photo', photo.path, photo.items, photo.raw.slice(0, 200), photo.error ?? '')
+if (photo.path === 'error-fallback') throw new Error(`photo inference failed: ${photo.error}`)
+if (!photo.items.some((i) => /banana|fruit/i.test(`${i.query} ${photo.raw}`))) {
+  throw new Error(`photo case missed banana: ${JSON.stringify(photo)}`)
+}
 
 if (errors.length) throw new Error(errors.join('\n'))
-console.log('e2e ok — eaten', kcal)
+console.log('e2e ok — text and photo')
 await browser.close()
