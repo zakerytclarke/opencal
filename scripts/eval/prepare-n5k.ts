@@ -1,6 +1,8 @@
 /**
- * Held-out Nutrition5k identification eval (FooDD-class singles + a few mixed plates).
- * Never uses banana.jpg / eggs.jpg. Skips dishes already copied into the v5 train thumb dir.
+ * Nutrition5k 80/20 image split.
+ * Test is at least 20% of usable plates (image + a visible ingredient).
+ * Prefers dishes that are not already in the fine-tune thumb dir so current
+ * weights are not scored on photos they trained on. Never banana.jpg / eggs.jpg.
  */
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -94,9 +96,8 @@ const SKIP_ING = new Set([
   'shallots',
 ])
 
-const MAX_PER_CLASS = 6
-const MIXED_N = 12
-const SEED = 'opencal-n5k-eval-v1'
+const SEED = 'opencal-n5k-eval-v2'
+const TEST_FRAC = 0.2
 
 function arg(name: string, fallback = ''): string {
   const i = process.argv.indexOf(`--${name}`)
@@ -153,6 +154,14 @@ function visibleIngs(row: N5kRow): N5kIng[] {
   })
 }
 
+function imagePath(found: { snap: string }, row: N5kRow): string | null {
+  const rel = (row.file_name || '').replace(/\\/g, '/')
+  const src = join(found.snap, rel)
+  if (existsSync(src)) return src
+  const fallback = join(found.snap, 'test', `${row.id}.png`)
+  return existsSync(fallback) ? fallback : null
+}
+
 const found = findN5k()
 if (!found) {
   console.error(`Nutrition5k cache not found.
@@ -164,114 +173,101 @@ Set N5K_DIR or pass --dir pointing at the snapshot.
 }
 
 const taxonomy = JSON.parse(readFileSync(taxonomyPath, 'utf8')) as Taxonomy
-const skipTrain = trainedIds()
+const priorTrain = trainedIds()
 const samples: N5kRow[] = []
 for (const line of readFileSync(found.meta, 'utf8').split('\n')) {
   if (!line.trim()) continue
   samples.push(JSON.parse(line) as N5kRow)
 }
 
-const byClass = new Map<string, N5kRow[]>()
-const mixed: N5kRow[] = []
+const pool: N5kRow[] = []
 for (const row of samples) {
   const sid = String(row.id || '')
-  if (!sid || skipTrain.has(sid)) continue
-  const ings = row.ingredients ?? []
-  if (ings.length === 1) {
-    const name = ings[0]?.name ?? ''
-    const grams = Number(ings[0]?.grams) || 0
-    const cls = classOf(name)
-    if (!cls) continue
-    const win = MASS_WINDOW[cls]
-    if (!win || grams < win[0] || grams > win[1]) continue
-    const list = byClass.get(cls) ?? []
-    list.push(row)
-    byClass.set(cls, list)
+  if (!sid) continue
+  if (!imagePath(found, row)) continue
+  if (!visibleIngs(row).length) continue
+  pool.push(row)
+}
+
+const testFrac = Math.min(0.5, Math.max(0.2, Number(arg('frac', String(TEST_FRAC))) || TEST_FRAC))
+const need = Math.max(1, Math.ceil(pool.length * testFrac))
+const unused = pool.filter((r) => !priorTrain.has(String(r.id)))
+const used = pool.filter((r) => priorTrain.has(String(r.id)))
+const rank = (rows: N5kRow[]) =>
+  [...rows].sort((a, b) => stableInt(`${SEED}:${a.id}`) - stableInt(`${SEED}:${b.id}`))
+
+const testRows: N5kRow[] = rank(unused).slice(0, need)
+if (testRows.length < need) {
+  testRows.push(...rank(used).slice(0, need - testRows.length))
+}
+const testIds = new Set(testRows.map((r) => String(r.id)))
+const leaked = testRows.filter((r) => priorTrain.has(String(r.id))).length
+
+function expectFromIng(ing: N5kIng, singleWhole: boolean): ExpectItem {
+  const name = cleanName(ing.name ?? 'food')
+  const cls = classOf(name)
+  const spec = cls ? taxonomy.classes[cls] : null
+  const grams = Number(ing.grams) || 0
+  const win = cls ? MASS_WINDOW[cls] : undefined
+  if (singleWhole && spec && win && grams >= win[0] && grams <= win[1]) {
+    return {
+      aliases: spec.aliases,
+      query: spec.query,
+      quantity: spec.quantity,
+      unit: spec.unit,
+      foodId: spec.foodId,
+    }
   }
+  return {
+    aliases: spec?.aliases ?? [name.replace(/s$/, ''), name],
+    query: spec?.query ?? name,
+    quantity: Math.max(1, Math.round(grams)),
+    unit: 'g',
+    foodId: spec?.foodId,
+  }
+}
+
+function toCase(row: N5kRow, dest: string): ImageCase {
   const vis = visibleIngs(row)
-  if (vis.length >= 2 && vis.length <= 3) mixed.push(row)
+  const singleWhole = vis.length === 1
+  const expect = vis.map((ing) => expectFromIng(ing, singleWhole))
+  const cls = vis.length === 1 ? classOf(vis[0]?.name ?? '') : null
+  const spec = cls ? taxonomy.classes[cls] : null
+  const primary = expect[0]
+  return {
+    id: `n5k-${row.id}`,
+    path: dest,
+    label: vis.map((i) => cleanName(i.name ?? '')).join('+') || 'meal',
+    source: 'nutrition5k',
+    aliases: spec?.aliases ?? primary?.aliases ?? [primary?.query ?? 'food'],
+    query: spec?.query ?? primary?.query ?? 'meal',
+    foodId: spec?.foodId ?? primary?.foodId,
+    quantity: spec && singleWhole ? spec.quantity : (primary?.quantity ?? 1),
+    unit: spec && singleWhole ? spec.unit : (primary?.unit ?? 'serving'),
+    kcalPer100g: spec?.kcalPer100g,
+    loose: vis.length > 1,
+    expect,
+  }
 }
 
 mkdirSync(outImgDir, { recursive: true })
-
-function copyDish(row: N5kRow): string | null {
-  const rel = (row.file_name || '').replace(/\\/g, '/')
-  const src = join(found!.snap, rel)
-  const fallback = join(found!.snap, 'test', `${row.id}.png`)
-  const from = existsSync(src) ? src : existsSync(fallback) ? fallback : null
-  if (!from) return null
-  const dest = join(outImgDir, `${row.id}.png`)
-  if (!existsSync(dest)) copyFileSync(from, dest)
-  return `evals/data/n5k-eval/${row.id}.png`
-}
-
 const test: ImageCase[] = []
-
-for (const [cls, list] of [...byClass.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-  const spec = taxonomy.classes[cls]
-  if (!spec) continue
-  const ranked = [...list].sort((a, b) => stableInt(`${SEED}:${a.id}`) - stableInt(`${SEED}:${b.id}`)).slice(0, MAX_PER_CLASS)
-  for (const row of ranked) {
-    const path = copyDish(row)
-    if (!path) continue
-    test.push({
-      id: `n5k-${row.id}`,
-      path,
-      label: cls,
-      source: 'nutrition5k',
-      aliases: spec.aliases,
-      query: spec.query,
-      foodId: spec.foodId,
-      quantity: spec.quantity,
-      unit: spec.unit,
-      kcalPer100g: spec.kcalPer100g,
-    })
-  }
-}
-
-const mixedRanked = [...mixed]
-  .sort((a, b) => stableInt(`${SEED}:mix:${a.id}`) - stableInt(`${SEED}:mix:${b.id}`))
-  .filter((row) => !test.some((t) => t.id === `n5k-${row.id}`))
-  .slice(0, MIXED_N)
-
-for (const row of mixedRanked) {
-  const path = copyDish(row)
-  if (!path) continue
-  const vis = visibleIngs(row)
-  const expect: ExpectItem[] = vis.map((ing) => {
-    const name = cleanName(ing.name ?? 'food')
-    const cls = classOf(name)
-    const spec = cls ? taxonomy.classes[cls] : null
-    return {
-      aliases: spec?.aliases ?? [name.replace(/s$/, ''), name],
-      query: spec?.query ?? name,
-      quantity: spec?.quantity ?? 1,
-      unit: spec?.unit ?? 'serving',
-      foodId: spec?.foodId,
-    }
-  })
-  test.push({
-    id: `n5k-${row.id}`,
-    path,
-    label: vis.map((i) => cleanName(i.name ?? '')).join('+'),
-    source: 'nutrition5k',
-    aliases: expect.flatMap((e) => e.aliases),
-    query: expect[0]?.query ?? 'meal',
-    quantity: 1,
-    unit: 'bowl',
-    loose: true,
-    expect,
-  })
+for (const row of testRows) {
+  const src = imagePath(found, row)
+  if (!src) continue
+  const destAbs = join(outImgDir, `${row.id}.png`)
+  if (!existsSync(destAbs)) copyFileSync(src, destAbs)
+  test.push(toCase(row, `evals/data/n5k-eval/${row.id}.png`))
 }
 
 if (!test.length) {
-  console.error('No Nutrition5k identification plates matched (after excluding prior train thumbs).')
+  console.error('No Nutrition5k plates with images and visible ingredients.')
   process.exit(1)
 }
 
 const out: ImageSplitFile = {
   seed: SEED,
-  note: `Nutrition5k identification eval. FooDD-class singles (max ${MAX_PER_CLASS}/class, mass window) plus ${MIXED_N} mixed plates. Excludes v5 train thumbs. Never banana.jpg/eggs.jpg.`,
+  note: `Nutrition5k 80/20. Pool ${pool.length} usable plates · test ${test.length} (${(100 * test.length / pool.length).toFixed(1)}%) · ${leaked} overlap prior train thumbs · never banana.jpg/eggs.jpg.`,
   train: [],
   test,
 }
@@ -279,9 +275,7 @@ mkdirSync(dirname(outSplit), { recursive: true })
 writeFileSync(outSplit, `${JSON.stringify(out, null, 2)}\n`)
 
 const singles = test.filter((t) => !t.loose)
-const by = new Map<string, number>()
-for (const t of singles) by.set(t.label, (by.get(t.label) ?? 0) + 1)
 console.log(`Wrote ${outSplit}`)
-console.log(`test ${test.length} · singles ${singles.length} · mixed ${test.length - singles.length}`)
-console.log(`classes ${[...by.entries()].map(([k, n]) => `${k}:${n}`).join(', ')}`)
-console.log(`skipped ${skipTrain.size} previously trained n5k thumbs`)
+console.log(`pool ${pool.length} · test ${test.length} (${((100 * test.length) / pool.length).toFixed(1)}% of pool) · singles ${singles.length} · mixed ${test.length - singles.length}`)
+console.log(`unused available ${unused.length} · prior train thumbs ${priorTrain.size} · leaked into test ${leaked}`)
+console.log(`train-eligible (not in test) ${pool.length - testIds.size}`)

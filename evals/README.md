@@ -9,7 +9,7 @@ Gold calories are **USDA via our food database** for the labeled food and servin
 | Split | Text | Images |
 | --- | --- | --- |
 | Train | `evals/splits/text.json` `train` | fixtures + FooDD 80% |
-| Test | `evals/splits/text.json` `test` (held out) | banana/eggs fixtures + FooDD 20% + Nutrition5k ID plates |
+| Test | `evals/splits/text.json` `test` (held out) | banana/eggs fixtures + FooDD 20% + Nutrition5k 20% |
 
 ## Commands
 
@@ -18,7 +18,7 @@ npm run eval:text          # held-out text, full VLM pipeline
 npm run eval:images        # fixtures (+ FooDD / Nutrition5k if prepared)
 npm run eval               # test split, text + images
 npm run eval -- --split train --modality text --limit 4
-npm run eval:prepare-n5k   # copy held-out Nutrition5k ID plates (excludes prior train thumbs)
+npm run eval:prepare-n5k   # Nutrition5k 80/20 test (at least 20% of usable plates)
 ```
 
 FooDD (IEEE FooDD / Kaggle `darsh22blc1378/foodd-ieee-datasets`):

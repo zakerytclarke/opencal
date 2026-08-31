@@ -231,7 +231,8 @@ def n5k_eval_ids() -> set[str]:
     if not N5K_EVAL_SPLIT.exists():
         return ids
     data = load_json(N5K_EVAL_SPLIT)
-    for row in (data.get("test") or []) + (data.get("train") or []):
+    # Test only — the 80% train pool is fair game for the mix.
+    for row in data.get("test") or []:
         ident = str(row.get("id") or "")
         if ident.startswith("n5k-"):
             ids.add(ident[4:])
@@ -1224,7 +1225,7 @@ def main() -> None:
     p.add_argument("--combo", type=int, default=700)
     p.add_argument("--pick", type=int, default=0, help="Lettered USDA pick examples; 0 = off (host maps)")
     p.add_argument("--coach", type=int, default=2000)
-    p.add_argument("--n5k", type=int, default=900)
+    p.add_argument("--n5k", type=int, default=1400)
     p.add_argument("--fixture-upsample", type=int, default=96)
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--skip-n5k", action="store_true")
