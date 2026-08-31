@@ -53,7 +53,7 @@ from prompts import (  # noqa: E402
     PICK_USER_TAIL,
     photo_portion_user,
 )
-from rag import catalog_lines  # noqa: E402
+from rag import catalog_lines, search_foods  # noqa: E402
 
 NICE_UNIT = re.compile(
     r"\b(medium|small|large|extra large|slice|sandwich|bar|can|bottle|bowl|"
@@ -1188,6 +1188,28 @@ def n5k_item(name: str, grams: float, rng: random.Random) -> dict:
     return grams_item(name, grams, rng)
 
 
+def portion_against_ruler(name: str, grams: float, catalog: list[dict]) -> dict:
+    """Express weighed grams as a fraction of the USDA household serving shown in RAG."""
+    hits = search_foods(catalog, name, 1)
+    g = float(grams)
+    if hits:
+        food = hits[0]
+        serve = float(food.get("serveG") or 0)
+        label_qty, label_unit = parse_label(food.get("serveLabel") or "")
+        unit = label_unit
+        if serve >= 12 and unit and unit not in {"g"}:
+            frac = g / serve
+            if 0.15 <= frac <= 6:
+                qty = frac * (label_qty or 1.0)
+                if qty >= 0.85 and abs(qty - round(qty)) < 0.15:
+                    qty = max(1, int(round(qty)))
+                else:
+                    qty = max(0.25, round(qty, 2))
+                return item_from(name, qty, unit)
+    rounded = max(5, int(round(g / 5.0) * 5))
+    return item_from(name, rounded, "g")
+
+
 def build_nutrition5k(limit: int, rng: random.Random, catalog: list[dict]) -> list[dict]:
     if limit < 0:
         return []
@@ -1243,7 +1265,7 @@ def build_nutrition5k(limit: int, rng: random.Random, catalog: list[dict]) -> li
             if not name or grams < 5:
                 continue
             identified.append(identify_item(name))
-            portioned.append(item_from(name, max(1, int(round(grams))), "g"))
+            portioned.append(portion_against_ruler(name, grams, catalog))
         if not portioned:
             continue
         if not sid:
