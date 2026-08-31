@@ -14,7 +14,7 @@ const page = await browser.newPage({
 await page.goto(base, { waitUntil: 'networkidle' })
 await page.evaluate(() => localStorage.clear())
 await page.reload({ waitUntil: 'networkidle' })
-await page.getByRole('button', { name: 'Get started' }).waitFor()
+await page.getByRole('button', { name: /get started/i }).waitFor()
 
 async function shot(name) {
   const path = `${out}/${name}.png`
@@ -23,7 +23,7 @@ async function shot(name) {
 }
 
 await shot('01-welcome')
-await page.getByRole('button', { name: 'Get started' }).click()
+await page.getByRole('button', { name: /get started/i }).click()
 await page.locator('h1', { hasText: 'About you' }).waitFor()
 await shot('02-about-you')
 

@@ -5,7 +5,6 @@ import { DateNav } from '../components/DateNav'
 import { FoodBatchCard } from '../components/FoodBatch'
 import { LogJobCard } from '../components/LogJobCard'
 import { SettingsSheet } from '../components/SettingsSheet'
-import { VlmStatusBar } from '../components/VlmStatus'
 import { NutritionCard } from '../components/NutritionCard'
 import { groupBatches } from '../lib/batches'
 import { loggedDays, totals } from '../lib/diary'
@@ -102,7 +101,6 @@ export function Home({
         )}
       </section>
 
-      <VlmStatusBar />
       <p className="db-note">
         <a href={USDA_FDC} target="_blank" rel="noopener noreferrer">
           {foodCount().toLocaleString()} foods on this device · USDA FoodData Central

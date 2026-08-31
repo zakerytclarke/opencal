@@ -20,7 +20,7 @@ await page.evaluate(async () => {
   localStorage.clear()
 })
 await page.reload({ waitUntil: 'networkidle' })
-await page.getByRole('button', { name: 'Get started' }).click()
+await page.getByRole('button', { name: /get started/i }).click()
 await page.getByRole('button', { name: 'Continue' }).click()
 await page.getByRole('button', { name: 'Continue' }).click()
 await page.getByRole('button', { name: 'Continue' }).click()

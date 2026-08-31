@@ -53,6 +53,19 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 .boot { display: grid; place-content: center; text-align: center; gap: 8px; color: var(--slate); }
 .brand { font-weight: 800; color: var(--lake); letter-spacing: -0.04em; font-size: 22px; }
 
+.onboard.is-splash {
+  display: flex; flex-direction: column; justify-content: center;
+  padding-bottom: 32px; text-align: center; min-height: 100dvh;
+}
+.splash-card { display: grid; justify-items: center; }
+.splash-logo { width: 88px; height: 88px; margin-bottom: 18px; }
+.splash-brand { font-size: 36px; font-weight: 800; letter-spacing: -0.05em; color: var(--hero); margin: 0; }
+.splash-lede {
+  color: var(--slate); line-height: 1.55; font-size: 16px; margin: 16px 0 0; max-width: 22em;
+}
+.onboard.is-splash h1 { font-size: 36px; }
+.onboard.is-splash .primary { margin-top: 28px; }
+
 .onboard-top, .home-head, .sheet-head, .foods-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }

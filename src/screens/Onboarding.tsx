@@ -1,7 +1,22 @@
 import { useMemo, useState } from 'react'
-import { VlmStatusBar } from '../components/VlmStatus'
-import { buildGoals, ftInToCm, goalDate, kgToLb, lbToKg, weeksToGoal } from '../lib/plan'
-import type { Activity, Profile, Sex, Units } from '../types'
+import {
+  UNTOUCHED,
+  applyOnboardingSuggestions,
+  bmiOf,
+  buildGoals,
+  convertOnboardingUnits,
+  draftGoalKg,
+  draftHeightCm,
+  draftWeightKg,
+  goalDate,
+  initialOnboardingDraft,
+  kgToLb,
+  parseDraftNumber,
+  type OnboardingDraft,
+  type OnboardingTouched,
+  weeksToGoal,
+} from '../lib/plan'
+import type { Activity, Profile } from '../types'
 
 const PACES_LB = [0.5, 1, 1.5, 2] as const
 
@@ -13,51 +28,41 @@ const ACTIVITY: { id: Activity; label: string; hint: string }[] = [
   { id: 'very', label: 'Extra active', hint: 'Physical job + training' },
 ]
 
-type Draft = {
-  units: Units
-  sex: Sex
-  age: string
-  ft: string
-  inch: string
-  heightCm: string
-  weight: string
-  goal: string
-  paceLb: number
-  activity: Activity
-}
-
-const initial: Draft = {
-  units: 'imperial',
-  sex: 'female',
-  age: '28',
-  ft: '5',
-  inch: '6',
-  heightCm: '168',
-  weight: '160',
-  goal: '145',
-  paceLb: 1,
-  activity: 'light',
-}
-
-function num(s: string): number {
-  return Number(String(s).replace(/[^\d.]/g, '')) || 0
+function Logo() {
+  return (
+    <svg className="splash-logo" viewBox="0 0 64 64" aria-hidden>
+      <rect width="64" height="64" rx="16" fill="#3b8fdf" />
+      <circle cx="32" cy="32" r="16" fill="none" stroke="#fff" strokeWidth="5" />
+      <circle cx="32" cy="32" r="6" fill="#19c37d" />
+    </svg>
+  )
 }
 
 export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
   const [step, setStep] = useState(0)
-  const [draft, setDraft] = useState<Draft>(initial)
+  const [{ draft, touched }, setOnboard] = useState(() => ({
+    draft: initialOnboardingDraft(),
+    touched: { ...UNTOUCHED },
+  }))
 
-  const weightKg = draft.units === 'imperial' ? lbToKg(num(draft.weight)) : num(draft.weight)
-  const goalKg = draft.units === 'imperial' ? lbToKg(num(draft.goal)) : num(draft.goal)
-  const heightCm = draft.units === 'imperial' ? ftInToCm(num(draft.ft), num(draft.inch)) : num(draft.heightCm)
+  function patch(next: Partial<OnboardingDraft>, touch?: Partial<OnboardingTouched>) {
+    setOnboard((s) => {
+      const touched = { ...s.touched, ...touch }
+      return { touched, draft: applyOnboardingSuggestions({ ...s.draft, ...next }, touched) }
+    })
+  }
+
+  const weightKg = draftWeightKg(draft)
+  const goalKg = draftGoalKg(draft)
+  const heightCm = draftHeightCm(draft)
   const weeklyKg = (goalKg < weightKg ? 1 : goalKg > weightKg ? -1 : 0) * (draft.paceLb * 0.45359237)
 
   const preview = useMemo(
     () =>
       buildGoals({
         sex: draft.sex,
-        age: num(draft.age) || 28,
-        heightCm: heightCm || 168,
+        age: parseDraftNumber(draft.age) || 28,
+        heightCm: heightCm || 163,
         weightKg: weightKg || 72,
         goalWeightKg: goalKg || 66,
         weeklyKg,
@@ -71,6 +76,8 @@ export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
   const eta = goalDate(weeks)
   const losing = preview.goalWeightKg < preview.weightKg - 0.2
   const gaining = preview.goalWeightKg > preview.weightKg + 0.2
+  const goalBmi = bmiOf(goalKg, heightCm)
+  const currentBmi = bmiOf(weightKg, heightCm)
 
   function next() {
     if (step < 5) setStep(step + 1)
@@ -82,71 +89,94 @@ export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
   }
 
   return (
-    <div className="onboard">
-      <div className="onboard-top">
-        <div className="brand">OpenCal</div>
-        {step > 0 ? (
-          <button type="button" className="text-btn" onClick={back}>
-            Back
-          </button>
-        ) : (
-          <span />
-        )}
-      </div>
-      <div className="dots" aria-hidden>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <i key={i} className={i === step ? 'is-on' : i < step ? 'is-done' : ''} />
-        ))}
-      </div>
-
-      {step === 0 && (
-        <section className="onboard-card">
-          <h1>Let’s personalize your plan</h1>
-          <p className="lede">
-            A few quick questions — weight, goal, and how fast you want to get there. Everything stays on this device.
-          </p>
-          <div className="seg" role="group" aria-label="Units">
-            <button type="button" className={draft.units === 'imperial' ? 'is-on' : ''} onClick={() => setDraft({ ...draft, units: 'imperial' })}>
-              lb / ft
-            </button>
-            <button type="button" className={draft.units === 'metric' ? 'is-on' : ''} onClick={() => setDraft({ ...draft, units: 'metric' })}>
-              kg / cm
+    <div className={`onboard${step === 0 ? ' is-splash' : ''}`}>
+      {step > 0 && (
+        <>
+          <div className="onboard-top">
+            <div className="brand">OpenCal</div>
+            <button type="button" className="text-btn" onClick={back}>
+              Back
             </button>
           </div>
+          <div className="dots" aria-hidden>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <i key={i} className={i === step ? 'is-on' : i < step ? 'is-done' : ''} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {step === 0 && (
+        <section className="onboard-card splash-card">
+          <Logo />
+          <h1 className="splash-brand">OpenCal</h1>
+          <p className="splash-lede">
+            Open-source calorie tracking, science-backed and locally powered. Nutrition comes from USDA data and
+            Mifflin–St Jeor calorie math. Photo, voice, and text logging run on a private AI model on this device —
+            your meals never leave it.
+          </p>
         </section>
       )}
 
       {step === 1 && (
         <section className="onboard-card">
           <h1>About you</h1>
-          <p className="lede">Used to estimate your daily calorie budget.</p>
+          <p className="lede">We’ll estimate a healthy weight and calorie budget from this. Edit anything that’s off.</p>
+          <div className="seg" role="group" aria-label="Units">
+            <button
+              type="button"
+              className={draft.units === 'imperial' ? 'is-on' : ''}
+              onClick={() => setOnboard((s) => ({ ...s, draft: convertOnboardingUnits(s.draft, 'imperial') }))}
+            >
+              lb / ft
+            </button>
+            <button
+              type="button"
+              className={draft.units === 'metric' ? 'is-on' : ''}
+              onClick={() => setOnboard((s) => ({ ...s, draft: convertOnboardingUnits(s.draft, 'metric') }))}
+            >
+              kg / cm
+            </button>
+          </div>
           <div className="seg">
-            <button type="button" className={draft.sex === 'female' ? 'is-on' : ''} onClick={() => setDraft({ ...draft, sex: 'female' })}>
+            <button type="button" className={draft.sex === 'female' ? 'is-on' : ''} onClick={() => patch({ sex: 'female' })}>
               Female
             </button>
-            <button type="button" className={draft.sex === 'male' ? 'is-on' : ''} onClick={() => setDraft({ ...draft, sex: 'male' })}>
+            <button type="button" className={draft.sex === 'male' ? 'is-on' : ''} onClick={() => patch({ sex: 'male' })}>
               Male
             </button>
           </div>
           <label className="field">
             <span>Age</span>
-            <input inputMode="numeric" value={draft.age} onChange={(e) => setDraft({ ...draft, age: e.target.value })} />
+            <input inputMode="numeric" value={draft.age} onChange={(e) => patch({ age: e.target.value })} />
           </label>
           {draft.units === 'imperial' ? (
             <div className="row-2">
               <label className="field">
                 <span>Height (ft)</span>
-                <input inputMode="numeric" value={draft.ft} onChange={(e) => setDraft({ ...draft, ft: e.target.value })} />
+                <input
+                  inputMode="numeric"
+                  value={draft.ft}
+                  onChange={(e) => patch({ ft: e.target.value }, { height: true })}
+                />
               </label>
               <label className="field">
                 <span>Inches</span>
-                <input inputMode="numeric" value={draft.inch} onChange={(e) => setDraft({ ...draft, inch: e.target.value })} />
+                <input
+                  inputMode="numeric"
+                  value={draft.inch}
+                  onChange={(e) => patch({ inch: e.target.value }, { height: true })}
+                />
               </label>
             </div>
           ) : (
             <label className="field">
               <span>Height (cm)</span>
-              <input inputMode="numeric" value={draft.heightCm} onChange={(e) => setDraft({ ...draft, heightCm: e.target.value })} />
+              <input
+                inputMode="numeric"
+                value={draft.heightCm}
+                onChange={(e) => patch({ heightCm: e.target.value }, { height: true })}
+              />
             </label>
           )}
           <p className="micro">Activity</p>
@@ -156,7 +186,7 @@ export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
                 key={a.id}
                 type="button"
                 className={`choice${draft.activity === a.id ? ' is-on' : ''}`}
-                onClick={() => setDraft({ ...draft, activity: a.id })}
+                onClick={() => patch({ activity: a.id })}
               >
                 <b>{a.label}</b>
                 <span>{a.hint}</span>
@@ -169,10 +199,21 @@ export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
       {step === 2 && (
         <section className="onboard-card">
           <h1>Current weight</h1>
-          <p className="lede">You can update this any time from home.</p>
+          <p className="lede">
+            {touched.weight
+              ? 'You can update this any time from home.'
+              : `Starting estimate for a ${draft.sex === 'male' ? 'man' : 'woman'} your height${
+                  currentBmi ? ` (BMI ${currentBmi.toFixed(1)})` : ''
+                }. Change it if it’s off.`}
+          </p>
           <label className="field hero-field">
             <span>{draft.units === 'imperial' ? 'Pounds' : 'Kilograms'}</span>
-            <input inputMode="decimal" value={draft.weight} onChange={(e) => setDraft({ ...draft, weight: e.target.value })} autoFocus />
+            <input
+              inputMode="decimal"
+              value={draft.weight}
+              onChange={(e) => patch({ weight: e.target.value }, { weight: true })}
+              autoFocus
+            />
           </label>
         </section>
       )}
@@ -180,10 +221,25 @@ export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
       {step === 3 && (
         <section className="onboard-card">
           <h1>Goal weight</h1>
-          <p className="lede">We’ll estimate a target date from your pace.</p>
+          <p className="lede">
+            {touched.goal
+              ? 'We’ll estimate a target date from your pace.'
+              : gaining
+                ? `A healthy BMI for your height is about 20. That’s ${draft.goal}${draft.units === 'imperial' ? ' lb' : ' kg'}.`
+                : losing
+                  ? `A healthy BMI for your height is 22. That’s ${draft.goal}${draft.units === 'imperial' ? ' lb' : ' kg'}${
+                      goalBmi ? ` (BMI ${goalBmi.toFixed(1)})` : ''
+                    }.`
+                  : 'You’re already in a healthy BMI range, so this matches your current weight.'}
+          </p>
           <label className="field hero-field">
             <span>{draft.units === 'imperial' ? 'Pounds' : 'Kilograms'}</span>
-            <input inputMode="decimal" value={draft.goal} onChange={(e) => setDraft({ ...draft, goal: e.target.value })} autoFocus />
+            <input
+              inputMode="decimal"
+              value={draft.goal}
+              onChange={(e) => patch({ goal: e.target.value }, { goal: true })}
+              autoFocus
+            />
           </label>
         </section>
       )}
@@ -210,7 +266,7 @@ export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
                     key={p}
                     type="button"
                     className={`choice${draft.paceLb === p ? ' is-on' : ''}`}
-                    onClick={() => setDraft({ ...draft, paceLb: p })}
+                    onClick={() => patch({ paceLb: p }, { pace: true })}
                   >
                     <b>
                       {p} lb / week
@@ -252,9 +308,8 @@ export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
       )}
 
       <button type="button" className="primary" onClick={next}>
-        {step === 0 ? 'Get started' : step === 5 ? 'Go to Today' : 'Continue'}
+        {step === 0 ? 'Let’s get started' : step === 5 ? 'Go to Today' : 'Continue'}
       </button>
-      <VlmStatusBar />
     </div>
   )
 }
