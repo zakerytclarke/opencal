@@ -183,6 +183,7 @@ def run_epoch(model, loader, optimizer, scheduler, device, train: bool) -> float
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="LiquidAI/LFM2.5-VL-450M")
+    p.add_argument("--resume", default="", help="Continue from a local checkpoint instead of --model")
     p.add_argument("--train", default=str(DATA / "train.jsonl"))
     p.add_argument("--val", default=str(DATA / "val.jsonl"))
     p.add_argument("--out", default=str(DEFAULT_OUT))
@@ -193,6 +194,7 @@ def main() -> None:
     p.add_argument("--lora", type=int, default=0, help="LoRA rank; 0 = full fine-tune")
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--limit", type=int, default=0)
+    p.add_argument("--save-epochs", action="store_true", help="Keep per-epoch copies (uses ~1 GB each)")
     args = p.parse_args()
 
     torch.manual_seed(args.seed)
@@ -203,10 +205,11 @@ def main() -> None:
         train_rows = train_rows[: args.limit]
         val_rows = val_rows[: max(1, args.limit // 10)]
 
-    print(f"train {len(train_rows)} · val {len(val_rows)} · device {device} · lora {args.lora or 'full'}")
-    processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True, max_image_tokens=256)
+    load_from = args.resume or args.model
+    print(f"train {len(train_rows)} · val {len(val_rows)} · device {device} · lora {args.lora or 'full'} · load {load_from}")
+    processor = AutoProcessor.from_pretrained(load_from, trust_remote_code=True, max_image_tokens=256)
     model = AutoModelForImageTextToText.from_pretrained(
-        args.model,
+        load_from,
         dtype=torch.bfloat16 if device.type == "cuda" else torch.float32,
         device_map="auto" if device.type == "cuda" else None,
         trust_remote_code=True,
@@ -250,16 +253,28 @@ def main() -> None:
         tr = run_epoch(model, train_loader, optimizer, scheduler, device, True)
         va = run_epoch(model, val_loader, optimizer, scheduler, device, False) if val_loader else tr
         print(f"  train {tr:.4f}  val {va:.4f}", flush=True)
-        tag = out / f"epoch-{epoch}"
-        tag.mkdir(exist_ok=True)
-        model.save_pretrained(tag)
-        processor.save_pretrained(tag)
+        if args.save_epochs:
+            tag = out / f"epoch-{epoch}"
+            tag.mkdir(exist_ok=True)
+            model.save_pretrained(tag)
+            processor.save_pretrained(tag)
         if va <= best:
             best = va
             model.save_pretrained(out)
             processor.save_pretrained(out)
             (out / "train_meta.json").write_text(
-                json.dumps({"epoch": epoch, "train_loss": tr, "val_loss": va, "model": args.model, "lora": args.lora}, indent=2)
+                json.dumps(
+                    {
+                        "epoch": epoch,
+                        "train_loss": tr,
+                        "val_loss": va,
+                        "model": args.model,
+                        "resume": args.resume,
+                        "lora": args.lora,
+                        "lr": args.lr,
+                    },
+                    indent=2,
+                )
                 + "\n"
             )
     print(f"saved {out}")

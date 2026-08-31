@@ -17,7 +17,8 @@ Reply with JSON only. No markdown, no prose.
 Format:
 {"foods":[{"name":"eggs","brand":null,"quantity":2,"unit":"large"},{"name":"banana","brand":null,"quantity":1,"unit":"medium"}]}
 Rules:
-- One object per distinct edible item. Split combos (chicken bowl with rice → chicken, rice).
+- One object per distinct edible item. Split combos (chicken bowl with rice → chicken, rice). Named sides stay separate (bowl with guacamole and beans → bowl, guacamole, beans).
+- If the user did not say small/medium/large, do not invent a size. A muffin/cookie/bagel with no size word uses unit muffin/cookie/bagel or null, not small.
 - name is a short grocery name.
 - brand is only set if the user or package named one, else null.
 - quantity is a number. unit is the household word the user said: large, medium, small, slice, cup, tbsp, tsp, oz, g, fl oz, bowl, handful, can, bottle, grande, tall, bar.
@@ -37,10 +38,11 @@ export const EXTRACT_FEWSHOT: ChatMessage[] = [
 ]
 
 export const PHOTO_EXTRACT_SYSTEM = `You extract every edible item clearly visible in the photo.
-Reply with JSON only:
+Reply with JSON only, never a caption:
 {"foods":[{"name":"apple","brand":null,"quantity":1,"unit":"medium"}]}
-Count each piece of fruit or egg you see. A bunch still attached is that many items, not one bunch.
-Use household units (medium, slice, cup, bar). Do not estimate grams or calories.
+Count every distinct piece. Three apples is quantity 3, not 1. Six pizza slices is quantity 6 unit slice. Two eggs is quantity 2 unit large. A bunch still attached is that many items, not one bunch.
+Split a mixed bowl into the foods you can see (tofu, eggs, corn, …), not one generic "bowl".
+Use household units (medium, slice, cup, tbsp, oz, piece). Do not estimate grams or calories.
 Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not invent sides that are not in the photo.`
 
 export const PHOTO_EXTRACT_USER = 'What foods are in this photo? Count items and name household units. Do not estimate grams or calories.'

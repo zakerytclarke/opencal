@@ -113,6 +113,7 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--before", default=str(ROOT / "evals/results/ft-baseline.json"))
     p.add_argument("--after", default=str(ROOT / "evals/results/ft-finetuned.json"))
+    p.add_argument("--v1", default=str(ROOT / "evals/results/ft-v1.json"), help="Previous fine-tune summary, if present")
     p.add_argument("--coach-before", default=str(ROOT / "evals/data/finetune/preds/baseline/coach.json"))
     p.add_argument("--coach-after", default=str(ROOT / "evals/data/finetune/preds/finetuned/coach.json"))
     p.add_argument("--out", default=str(ROOT / "evals/results/ft-compare.md"))
@@ -120,6 +121,7 @@ def main() -> None:
 
     before = load(Path(args.before))
     after = load(Path(args.after))
+    v1 = load(Path(args.v1)) if Path(args.v1).exists() else None
     gold_coach = ROOT / "evals/splits/coach.json"
     coach_b = score_coach(Path(args.coach_before), gold_coach) if Path(args.coach_before).exists() else None
     coach_a = score_coach(Path(args.coach_after), gold_coach) if Path(args.coach_after).exists() else None
@@ -136,6 +138,10 @@ def main() -> None:
         "",
         block("Baseline", b_all),
         "",
+    ]
+    if v1:
+        lines += [block("Fine-tuned v1", v1["summary"]["all"]), ""]
+    lines += [
         block("Fine-tuned", a_all),
         "",
         "| metric | baseline | fine-tuned | change |",
@@ -146,13 +152,32 @@ def main() -> None:
         f"| within 20% | {pct(b_all['within20'])} | {pct(a_all['within20'])} | {delta(b_all['within20'], a_all['within20'])} |",
         f"| within 50% | {pct(b_all['within50'])} | {pct(a_all['within50'])} | {delta(b_all['within50'], a_all['within50'])} |",
         "",
+    ]
+    if v1:
+        v1_all = v1["summary"]["all"]
+        lines += [
+            "v1 vs this run (same held-out split):",
+            "",
+            "| metric | v1 | this run | change |",
+            "|---|---:|---:|---|",
+            f"| name acc | {pct(v1_all['namedAcc'])} | {pct(a_all['namedAcc'])} | {delta(v1_all['namedAcc'], a_all['namedAcc'])} |",
+            f"| kcal MAE | {v1_all['kcalMae']:.1f} | {a_all['kcalMae']:.1f} | {delta(v1_all['kcalMae'], a_all['kcalMae'], True)} |",
+            "",
+        ]
+    lines += [
         "## Text vs images",
         "",
         block("Baseline text", before["summary"]["text"]),
+    ]
+    if v1:
+        lines.append(block("Fine-tuned v1 text", v1["summary"]["text"]))
+    lines += [
         block("Fine-tuned text", after["summary"]["text"]),
         block("Baseline images", before["summary"]["image"]),
-        block("Fine-tuned images", after["summary"]["image"]),
     ]
+    if v1:
+        lines.append(block("Fine-tuned v1 images", v1["summary"]["image"]))
+    lines.append(block("Fine-tuned images", after["summary"]["image"]))
     if coach_b and coach_a:
         lines += [
             "",
