@@ -351,18 +351,59 @@ const rows: Row[] = [
     },
   },
   {
-    id: 25,
+    id: 26,
     kind: 'text',
-    name: 'KIND brand is recovered from the meal text',
-    input: 'a KIND protein bar',
-    expect: 'KIND protein bar',
+    name: 'Regex fills in turkey bacon the VLM dropped',
+    input: '2 slices turkey bacon and 2 eggs',
+    expect: 'eggs · turkey bacon',
+    run() {
+      const items = refineExtracted([{ raw: this.input, query: 'eggs', quantity: 2, unit: 'large' }], this.input)
+      const got = foodsLine(items)
+      return {
+        pass: items.length === 2 && items.some((i) => /turkey bacon/i.test(i.query)) && items.some((i) => /^eggs?$/i.test(i.query)),
+        got,
+      }
+    },
+  },
+  {
+    id: 27,
+    kind: 'text',
+    name: 'Chipotle brand stays on the bowl, not guacamole',
+    input: 'Chipotle chicken bowl with guacamole and black beans',
+    expect: 'Chipotle bowl · guacamole · black beans',
     run() {
       const items = refineExtracted(
-        [{ raw: this.input, query: 'protein bar', quantity: 1, unit: 'bar' }],
+        [
+          { raw: this.input, query: 'chicken bowl', quantity: 1, unit: 'bowl', brand: 'Chipotle' },
+          { raw: this.input, query: 'guacamole', quantity: 1, unit: 'serving', brand: 'Chipotle' },
+          { raw: this.input, query: 'black beans', quantity: 1, unit: 'cup', brand: 'Chipotle' },
+        ],
         this.input,
       )
-      const got = foodsLine(items)
-      return { pass: items[0]?.brand === 'KIND' && /protein bar/i.test(items[0]?.query ?? ''), got }
+      const bowl = items.find((i) => /chicken|bowl/i.test(i.query))
+      const guac = items.find((i) => /guac/i.test(i.query))
+      const beans = items.find((i) => /bean/i.test(i.query))
+      return {
+        pass: bowl?.brand === 'Chipotle' && !guac?.brand && !beans?.brand,
+        got: items.map((i) => `${i.brand ?? '—'} ${i.query}`).join(' · '),
+      }
+    },
+  },
+  {
+    id: 28,
+    kind: 'text',
+    name: 'Guessed small KIND bar becomes one bar',
+    input: 'a KIND protein bar',
+    expect: '1 KIND protein bar',
+    run() {
+      const items = refineExtracted(
+        [{ raw: this.input, query: 'protein bar', quantity: 1, unit: 'small' }],
+        this.input,
+      )
+      return {
+        pass: items[0]?.brand === 'KIND' && items[0]?.unit == null && items[0]?.quantity === 1,
+        got: foodsLine(items),
+      }
     },
   },
 ]

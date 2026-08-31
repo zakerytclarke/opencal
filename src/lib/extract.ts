@@ -220,19 +220,40 @@ function specifyFromMeal(item: ExtractedItem, meal: string): ExtractedItem {
 }
 
 function brandFromMeal(meal: string, item: ExtractedItem): string | null {
-  if (item.brand?.trim()) return item.brand.trim()
-  const named = meal.match(/\b(KIND|Starbucks|Chipotle|McDonald'?s|Chobani|Applebee'?s)\b/i)
-  if (named) return named[1].replace(/mcdonalds/i, "McDonald's")
-  const caps = meal.match(/\b[A-Z]{2,8}\b/g)
-  if (caps?.length === 1) return caps[0]
+  const brands = "KIND|Starbucks|Chipotle|McDonald'?s|Chobani|Applebee'?s"
+  const q = item.query.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')
+  const near = meal.match(new RegExp(`\\b(${brands})\\b(.{0,40}?)\\b${q}\\b`, 'i'))
+  if (near && !/\b(with|and|,)\b/i.test(near[2])) {
+    return near[1].replace(/mcdonalds/i, "McDonald's")
+  }
+  if (item.brand?.trim()) {
+    const b = item.brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const vlmNear = meal.match(new RegExp(`\\b${b}\\b(.{0,40}?)\\b${q}\\b`, 'i'))
+    if (vlmNear && !/\b(with|and|,)\b/i.test(vlmNear[1])) return item.brand.trim()
+  }
   return null
+}
+
+function sameFood(a: string, b: string): boolean {
+  const at = normTokens(a)
+  const bt = normTokens(b)
+  if (!at.length || !bt.length) return false
+  if (at.join(' ') === bt.join(' ')) return true
+  const [shorter, longer] = at.length <= bt.length ? [at, bt] : [bt, at]
+  return shorter.every((t) => longer.includes(t))
+}
+
+function stripGuessedSize(item: ExtractedItem, meal: string): ExtractedItem {
+  if (!item.unit || !/^(small|medium|large|extra large)$/i.test(item.unit)) return item
+  if (new RegExp(`\\b${item.unit.replace(/\s+/g, '\\s+')}s?\\b`, 'i').test(meal)) return item
+  return { ...item, unit: null }
 }
 
 /** Drop example-food leaks and recover quantity/brand from the user's words. */
 export function refineExtracted(items: ExtractedItem[], meal: string): ExtractedItem[] {
   if (!meal.trim() || meal.trim() === '(photo)') return items
   const regex = extractFoods(meal).filter((i) => i.query && !i.caloriesHint)
-  return items
+  const grounded = items
     .filter((item) => mentionedInMeal(item, meal))
     .map((item) => {
       let next = specifyFromMeal(item, meal)
@@ -246,9 +267,14 @@ export function refineExtracted(items: ExtractedItem[], meal: string): Extracted
       } else if (hit && !next.unit && hit.unit) {
         next = { ...next, unit: hit.unit }
       }
-      next = { ...next, brand: brandFromMeal(meal, next) }
+      next = stripGuessedSize({ ...next, brand: brandFromMeal(meal, next) }, meal)
       return next
     })
+  for (const r of regex) {
+    if (grounded.some((g) => sameFood(g.query, r.query))) continue
+    grounded.push(stripGuessedSize({ ...r, brand: brandFromMeal(meal, r) }, meal))
+  }
+  return grounded
 }
 
 export function looksLikeSentence(text: string): boolean {
