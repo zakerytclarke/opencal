@@ -3,6 +3,8 @@
 Held-out eval is `evals/splits/text.json` + `images.json` test, plus Nutrition5k identification (`images.n5k.json`) and `coach.json` / `cite.json`.
 The VLM extracts name, brand, quantity, and unit. Calories are MiniSearch + convert_portion on the host-mapped USDA row, not model-invented numbers.
 
+v5 numbers below are the previous canonical run on 16 text + 2 fixture photos (n=18). v6 adds 32 held-out Nutrition5k identification plates (FooDD classes: apple, carrot, cucumber, egg, orange, rice, tomato) that v5 never scored. Compare **text** MAE for calories and **image name accuracy** for vision. FooDD itself is not on disk.
+
 ## Meal calories (primary)
 
 ### Baseline (n=18)
