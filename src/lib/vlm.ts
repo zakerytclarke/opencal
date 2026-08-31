@@ -22,6 +22,7 @@ type Session = {
     generate: (opts: Record<string, unknown>) => Promise<unknown>
   }
   runProcessor: (image: unknown, prompt: string) => Promise<{ input_ids: { dims: number[] } } & Record<string, unknown>>
+  runText: (prompt: string) => Promise<{ input_ids: { dims: number[] } } & Record<string, unknown>>
   loadImage: (url: string) => Promise<unknown>
 }
 
@@ -48,7 +49,8 @@ export function subscribeVlm(fn: (s: VlmStatus) => void): () => void {
 }
 
 const SYSTEM = `You are OpenCal's on-device food logger.
-Look at the meal photo and identify every distinct food or drink.
+The user will describe a meal in text or show a photo.
+Identify every distinct food or drink.
 Reply with JSON only — no markdown, no prose.
 Format:
 {"tools":[{"name":"search_foods","arguments":{"query":"scrambled eggs","quantity":2,"unit":"large"}}]}
@@ -56,9 +58,9 @@ Rules:
 - One search_foods call per distinct item.
 - query is a short common grocery name (banana, grilled chicken, brown rice).
 - quantity is a number. unit is optional: medium, large, slice, cup, oz, g, bowl, tbsp.
-- Estimate portions from what you see. Skip plates, utensils, and napkins.`
+- Estimate portions. Skip plates, utensils, and napkins.`
 
-const USER = 'Log the foods in this photo using search_foods tool calls.'
+const PHOTO_USER = 'Log the foods in this photo using search_foods tool calls.'
 
 function hasWebGpu(): boolean {
   return Boolean((navigator as Navigator & { gpu?: unknown }).gpu)
@@ -113,6 +115,15 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
           prompt,
           { add_special_tokens: false },
         ),
+      runText: async (prompt) => {
+        const call = processor as unknown as {
+          tokenizer?: (text: string, opts?: object) => Promise<{ input_ids: { dims: number[] } } & Record<string, unknown>>
+        } & ((text: string, opts?: object) => Promise<{ input_ids: { dims: number[] } } & Record<string, unknown>>)
+        if (typeof call.tokenizer === 'function') {
+          return call.tokenizer(prompt, { add_special_tokens: false })
+        }
+        return call(prompt, { add_special_tokens: false })
+      },
       loadImage: (url) => tf.RawImage.fromURL(url),
     }
     session = ready
@@ -182,10 +193,40 @@ function parseToolCalls(text: string): { query: string; quantity: number; unit: 
   return []
 }
 
+function itemsFromModelText(raw: string): ExtractedItem[] {
+  const calls = parseToolCalls(raw)
+  if (calls.length) {
+    return calls.map((c) => ({
+      raw,
+      query: c.query,
+      quantity: c.quantity,
+      unit: c.unit,
+    }))
+  }
+  return extractFoods(raw)
+}
+
+async function decodeGeneration(
+  sess: Session,
+  inputs: { input_ids: { dims: number[] } } & Record<string, unknown>,
+): Promise<string> {
+  const outputs = await sess.model.generate({
+    ...inputs,
+    max_new_tokens: 220,
+    temperature: 0.1,
+    repetition_penalty: 1.05,
+  })
+  const start = inputs.input_ids.dims.at(-1) ?? 0
+  const decoded = sess.processor.batch_decode(
+    (outputs as { slice: (a: null, range: [number | null, null]) => unknown }).slice(null, [start, null]),
+    { skip_special_tokens: true },
+  )[0]
+  return String(decoded ?? '').trim()
+}
+
 export async function analyzeMealPhoto(image: Blob, onProgress?: ProgressFn): Promise<{ raw: string; items: ExtractedItem[] }> {
   const sess = await loadSession(onProgress)
   onProgress?.('Reading the photo…', 82)
-  setStatus({ message: 'Reading the photo…', pct: 82 })
   const url = URL.createObjectURL(image)
   try {
     const img = await sess.loadImage(url)
@@ -195,37 +236,33 @@ export async function analyzeMealPhoto(image: Blob, onProgress?: ProgressFn): Pr
         role: 'user',
         content: [
           { type: 'image' },
-          { type: 'text', text: USER },
+          { type: 'text', text: PHOTO_USER },
         ],
       },
     ]
     const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true })
     const inputs = await sess.runProcessor(img, prompt)
     onProgress?.('Finding foods…', 88)
-    const outputs = await sess.model.generate({
-      ...inputs,
-      max_new_tokens: 220,
-      temperature: 0.1,
-      repetition_penalty: 1.05,
-    })
-    const start = inputs.input_ids.dims.at(-1) ?? 0
-    const decoded = sess.processor.batch_decode(
-      (outputs as { slice: (a: null, range: [number | null, null]) => unknown }).slice(null, [start, null]),
-      { skip_special_tokens: true },
-    )[0]
-    const raw = String(decoded ?? '').trim()
-    const calls = parseToolCalls(raw)
-    const items: ExtractedItem[] = calls.length
-      ? calls.map((c) => ({
-          raw,
-          query: c.query,
-          quantity: c.quantity,
-          unit: c.unit,
-        }))
-      : extractFoods(raw)
+    const raw = await decodeGeneration(sess, inputs)
     onProgress?.('Matching the local database…', 94)
-    return { raw, items }
+    return { raw, items: itemsFromModelText(raw) }
   } finally {
     URL.revokeObjectURL(url)
   }
+}
+
+export async function analyzeMealText(text: string, onProgress?: ProgressFn): Promise<{ raw: string; items: ExtractedItem[] }> {
+  const sess = await loadSession(onProgress)
+  onProgress?.('Reading your log…', 82)
+  const messages = [
+    { role: 'system', content: SYSTEM },
+    { role: 'user', content: `Log this meal using search_foods tool calls:\n${text}` },
+  ]
+  const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true })
+  const inputs = await sess.runText(prompt)
+  onProgress?.('Finding foods…', 88)
+  const raw = await decodeGeneration(sess, inputs)
+  onProgress?.('Matching the local database…', 94)
+  const items = itemsFromModelText(raw)
+  return { raw, items: items.length ? items : extractFoods(text) }
 }

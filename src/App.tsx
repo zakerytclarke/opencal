@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LogOverlay, type LogKind } from './components/LogOverlay'
 import { addEntries, clearProfile, loadDiary, loadProfile, removeEntry, saveProfile } from './lib/storage'
 import { loadFoods } from './lib/foods'
 import { warmupVlm } from './lib/vlm'
@@ -7,19 +8,13 @@ import { speak } from './lib/speech'
 import type { Diary, LogEntry, Profile } from './types'
 import { Home } from './screens/Home'
 import { Onboarding } from './screens/Onboarding'
-import { PhotoSheet } from './screens/PhotoSheet'
-import { SearchSheet } from './screens/SearchSheet'
-import { VoiceSheet } from './screens/VoiceSheet'
-
-type Sheet = 'none' | 'search' | 'voice' | 'photo'
 
 export default function App() {
   const [ready, setReady] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(() => loadProfile())
   const [diary, setDiary] = useState<Diary>(() => loadDiary())
   const [date, setDate] = useState(todayKey())
-  const [sheet, setSheet] = useState<Sheet>('none')
-  const [searchSeed, setSearchSeed] = useState('')
+  const [flow, setFlow] = useState<LogKind | null>(null)
 
   useEffect(() => {
     void loadFoods().finally(() => setReady(true))
@@ -34,9 +29,8 @@ export default function App() {
   function log(entries: LogEntry[]) {
     setDiary((d) => addEntries(d, date, entries))
     const kcal = entries.reduce((s, e) => s + e.kcal, 0)
-    if (entries[0]?.source === 'search' || entries[0]?.source === 'sentence' || entries[0]?.source === 'quick') {
-      speak(`Logged ${kcal} calories.`)
-    }
+    const names = entries.map((e) => e.name).slice(0, 3).join(', ')
+    speak(`Logged ${names}. ${kcal} calories.`)
   }
 
   function del(id: string) {
@@ -69,40 +63,16 @@ export default function App() {
           date={date}
           onDate={setDate}
           onDelete={del}
-          onVoice={() => setSheet('voice')}
-          onSearch={() => {
-            setSearchSeed('')
-            setSheet('search')
-          }}
-          onPhoto={() => setSheet('photo')}
+          onVoice={() => setFlow('voice')}
+          onSearch={() => setFlow('search')}
+          onPhoto={() => setFlow('photo')}
           onReset={reset}
         />
       )}
 
-      {profile && sheet !== 'none' && <div className="backdrop" onClick={() => setSheet('none')} />}
-
-      {profile && sheet === 'search' && (
-        <SearchSheet
-          key={searchSeed || 'search'}
-          date={date}
-          initialQuery={searchSeed}
-          onClose={() => setSheet('none')}
-          onLog={log}
-        />
-      )}
-      {profile && sheet === 'voice' && (
-        <VoiceSheet
-          date={date}
-          onClose={() => setSheet('none')}
-          onLog={log}
-          onFallbackSearch={(text) => {
-            setSearchSeed(text)
-            setSheet('search')
-          }}
-        />
-      )}
-      {profile && sheet === 'photo' && (
-        <PhotoSheet date={date} onClose={() => setSheet('none')} onLog={log} />
+      {profile && flow && <div className="backdrop" onClick={() => setFlow(null)} />}
+      {profile && flow && (
+        <LogOverlay kind={flow} date={date} onClose={() => setFlow(null)} onLog={log} />
       )}
     </div>
   )
