@@ -195,6 +195,21 @@ def main() -> None:
             "the model now emits JSON for egg, avocado, spinach, and bread, which inflates image MAE vs that eggs-only label.",
             "Banana photo counts 5 and matches 525 kcal. Text MAE is the cleaner calorie signal.",
         ]
+    pick_after = ROOT / "evals/data/finetune/preds/finetuned/pick.json"
+    if pick_after.exists():
+        picks = load(pick_after)
+        n = len(picks)
+        ok = sum(1 for r in picks if r.get("ok"))
+        none_n = sum(1 for r in picks if r.get("expect") is None)
+        none_ok = sum(1 for r in picks if r.get("expect") is None and r.get("ok"))
+        lines += [
+            "",
+            "## Pick / refuse (RAG)",
+            "",
+            f"Held-out `evals/splits/pick.json`: {ok}/{n} correct.",
+            f"Refuse when the true USDA row is missing: {none_ok}/{none_n}.",
+            "Calories are never taken from the model; pick-null leaves the diary unmatched (0 kcal).",
+        ]
     Path(args.out).write_text("\n".join(lines) + "\n")
     if coach_b and coach_a:
         Path(args.out.replace(".md", "-coach.json")).write_text(

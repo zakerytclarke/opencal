@@ -40,9 +40,21 @@ export default defineConfig({
     host: true,
     port: 5173,
     allowedHosts: true,
+    proxy: {
+      '/vlm': {
+        target: 'http://127.0.0.1:8765',
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     host: true,
     allowedHosts: true,
+    proxy: {
+      '/vlm': {
+        target: 'http://127.0.0.1:8765',
+        changeOrigin: true,
+      },
+    },
   },
 })

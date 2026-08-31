@@ -15,15 +15,18 @@ from transformers import AutoModelForImageTextToText, AutoProcessor
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from portions import portion_tool_line  # noqa: E402
 from prompts import (  # noqa: E402
     COACH_SYSTEM,
     EXTRACT_SYSTEM,
     EXTRACT_USER,
     PHOTO_EXTRACT_SYSTEM,
     PHOTO_EXTRACT_USER,
+    PICK_SYSTEM,
 )
 
 EXTRACT_PREFIX = '{"foods":['
+PICK_PREFIX = '{"pick":'
 
 
 def load_json(path: Path):
@@ -85,6 +88,100 @@ def parse_numbered(text: str) -> list[dict]:
             name = qm.group(2)
         foods.append({"name": name, "brand": None, "quantity": qty, "unit": None})
     return foods
+
+
+def parse_pick_letter(text: str) -> str | None:
+    cleaned = re.sub(r"<\|[^>]+?\|>", "", text).strip()
+    blob = cleaned
+    if "{" in cleaned and "}" in cleaned:
+        blob = cleaned[cleaned.index("{") : cleaned.rindex("}") + 1]
+    obj = None
+    try:
+        obj = json.loads(blob)
+    except json.JSONDecodeError:
+        try:
+            obj = json.loads(re.sub(r",(\s*[}\]])", r"\1", blob))
+        except json.JSONDecodeError:
+            obj = None
+    value = None
+    if isinstance(obj, dict):
+        value = obj.get("pick", obj.get("id"))
+    if value is None:
+        m = re.search(r"\b([A-H]|none|null)\b", cleaned, re.I)
+        value = m.group(1) if m else None
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s or re.match(r"^(none|null|no)$", s, re.I):
+        return None
+    return s.upper()[:1] if s else None
+
+
+def _find_food(foods: list[dict], needle: str) -> dict | None:
+    n = needle.lower()
+    for f in foods:
+        blob = (f.get("name") or "") + " " + " ".join(f.get("aliases") or [])
+        if n in blob.lower():
+            return f
+    return None
+
+
+def build_pick_case(foods: list[dict], case: dict) -> dict:
+    qty = float(case.get("quantity") or 1)
+    unit = str(case.get("unit") or "serving")
+    query = str(case["query"])
+    meal = str(case["meal"])
+    hits: list[dict] = []
+    gold = None
+    true_re = re.compile(case.get("trueFoodRe") or r"$a", re.I)
+    if case["mode"] == "exclude_true_food":
+        for d in case.get("decoyNeedles") or []:
+            hit = _find_food(foods, d)
+            if hit and not true_re.search(hit.get("name") or ""):
+                hits.append(hit)
+        extra = [f for f in foods if f.get("kcal", 0) >= 5 and not true_re.search(f.get("name") or "")]
+        for f in extra:
+            if f["id"] not in {h["id"] for h in hits}:
+                hits.append(f)
+            if len(hits) >= 8:
+                break
+    elif case["mode"] == "include_true_food":
+        gold = next((f for f in foods if true_re.search(f.get("name") or "")), None) or _find_food(
+            foods, query
+        )
+        distractors = [f for f in foods if f.get("kcal", 0) >= 5 and (not gold or f["id"] != gold["id"])]
+        hits = distractors[:7]
+        if gold:
+            hits.append(gold)
+    else:
+        hits = [f for f in foods if f.get("kcal", 0) >= 5][:8]
+
+    hits = hits[:8]
+    lines = []
+    gold_letter = None
+    for i, food in enumerate(hits):
+        letter = chr(65 + i)
+        lines.append(f"{letter}. {food['name']} · {portion_tool_line(food, qty, unit)}")
+        if gold and food["id"] == gold["id"]:
+            gold_letter = letter
+    user = "\n".join(
+        [
+            f"Meal: {meal}",
+            f"Item: {query}, about {qty:g} {unit}",
+            "Database hits (USDA reference + convert_portion for this item):",
+            *lines,
+            "None. no match",
+            "Pick the closest nutrition reference letter. Keep the user name, brand, and portion. Do not output grams or calories.",
+        ]
+    )
+    expect = case.get("expectPick")
+    return {
+        "id": case["id"],
+        "user": user,
+        "expect": None if expect is None else gold_letter,
+        "gold_name": gold["name"] if gold else None,
+        "hit_names": [h["name"] for h in hits],
+    }
 
 
 @torch.inference_mode()
@@ -194,8 +291,38 @@ def main() -> None:
         coach.append({"id": row["id"], "user": row["user"], "raw": raw, "expect": row["expect"]})
         print(f"COACH {row['id']} → {raw[:100]!r}", flush=True)
 
+    pick_split = ROOT / "evals/splits/pick.json"
+    pick_preds = []
+    if pick_split.exists():
+        catalog = load_json(ROOT / "public/foods.json")["foods"]
+        for case in load_json(pick_split)["test"]:
+            built = build_pick_case(catalog, case)
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": PICK_SYSTEM}]},
+                {"role": "user", "content": [{"type": "text", "text": built["user"]}]},
+            ]
+            raw = generate(model, processor, messages, 80, device, PICK_PREFIX)
+            letter = parse_pick_letter(raw)
+            expect = built["expect"]
+            ok = (letter is None and expect is None) or (letter is not None and letter == expect)
+            pick_preds.append(
+                {
+                    "id": built["id"],
+                    "raw": raw,
+                    "pick": letter,
+                    "expect": expect,
+                    "ok": ok,
+                    "gold_name": built["gold_name"],
+                }
+            )
+            print(f"PICK {built['id']} → {letter!r} expect {expect!r} {'ok' if ok else 'miss'}", flush=True)
+        n_ok = sum(1 for r in pick_preds if r["ok"])
+        print(f"pick {n_ok}/{len(pick_preds)}", flush=True)
+
     (out_dir / "extracts.json").write_text(json.dumps(extracts, indent=2) + "\n")
     (out_dir / "coach.json").write_text(json.dumps(coach, indent=2) + "\n")
+    if pick_preds:
+        (out_dir / "pick.json").write_text(json.dumps(pick_preds, indent=2) + "\n")
     print(f"wrote {out_dir}")
 
 

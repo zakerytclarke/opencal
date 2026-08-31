@@ -27,6 +27,7 @@ FOODS_PATH = ROOT / "public" / "foods.json"
 TEXT_SPLIT = ROOT / "evals" / "splits" / "text.json"
 IMAGE_SPLIT = ROOT / "evals" / "splits" / "images.json"
 COACH_SPLIT = ROOT / "evals" / "splits" / "coach.json"
+PICK_SPLIT = ROOT / "evals" / "splits" / "pick.json"
 OUT_DIR = ROOT / "evals" / "data" / "finetune"
 IMG_DIR = OUT_DIR / "images"
 # Held-out vision eval. Never copy these into train JSONL.
@@ -208,6 +209,9 @@ def banned_texts() -> set[str]:
     if COACH_SPLIT.exists():
         for row in load_json(COACH_SPLIT).get("test") or []:
             banned.add(norm(row["user"]))
+    if PICK_SPLIT.exists():
+        for row in load_json(PICK_SPLIT).get("test") or []:
+            banned.add(norm(row["meal"]))
     return banned
 
 
@@ -509,6 +513,8 @@ def build_curriculum(banned: set[str]) -> list[dict]:
         ("2 fried eggs and 2 slices of sourdough", foods(("fried eggs", 2, "large"), ("sourdough", 2, "slice"))),
         ("5 medium tangerines", foods(("tangerine", 5, "medium"))),
         ("two banana peppers", foods(("banana pepper", 2, None))),
+        ("pickled banana peppers on a salad", foods(("banana pepper", 3, "piece"), ("salad", 1, "bowl"))),
+        ("a stuffed bell pepper", foods(("bell pepper", 1, None))),
         ("a pickled jalapeno pepper", foods(("jalapeno pepper", 1, None))),
         ("1 bell pepper", foods(("bell pepper", 1, None))),
         ("4 slices of pork bacon and 3 eggs", foods(("pork bacon", 4, "slice"), ("eggs", 3, "large"))),
@@ -603,6 +609,34 @@ def build_pick_prompt(gold: dict, hits: list[dict], qty: float, unit: str, query
     return user, assistant
 
 
+def pick_none_row(hits: list[dict], qty: float, unit: str, query: str) -> dict:
+    lines = []
+    for i, food in enumerate(hits):
+        key = chr(65 + i)
+        lines.append(f"{key}. {food['name']} · {portion_tool_line(food, qty, unit)}")
+    user = "\n".join(
+        [
+            f"Meal: {query}",
+            f"Item: {query}, about {qty_num(qty)} {unit}",
+            "Database hits (USDA reference + convert_portion for this item):",
+            *lines,
+            "None. no match",
+            "Pick the closest nutrition reference letter. Keep the user name, brand, and portion. Do not output grams or calories.",
+        ]
+    )
+    assistant = json.dumps({"pick": None, "name": None}, separators=(",", ":"))
+    return {
+        "task": "pick",
+        "image": None,
+        "messages": [
+            {"role": "system", "content": PICK_SYSTEM},
+            {"role": "user", "content": user},
+            {"role": "assistant", "content": assistant},
+        ],
+        "meta": {"gold_id": None, "unit": unit, "none": True},
+    }
+
+
 def pick_row(gold: dict, hits: list[dict], qty: float, unit: str, query: str) -> dict:
     user, assistant = build_pick_prompt(gold, hits, qty, unit, query)
     return {
@@ -620,22 +654,9 @@ def pick_row(gold: dict, hits: list[dict], qty: float, unit: str, query: str) ->
 def build_pick(foods: list[dict], n: int, rng: random.Random) -> list[dict]:
     pool = catalog(foods)
     all_foods = [f for f in foods if f.get("kcal", 0) >= 5]
-    rows: list[dict] = []
+    core: list[dict] = []
+    special: list[dict] = []
     attempts = 0
-    while len(rows) < n - 80 and attempts < n * 12:
-        attempts += 1
-        gold = rng.choice(pool)
-        distractors = rng.sample([f for f in pool if f["id"] != gold["id"]], k=min(7, len(pool) - 1))
-        hits = distractors + [gold]
-        rng.shuffle(hits)
-        qty, unit = parse_label(gold.get("serveLabel") or "")
-        unit = unit or rng.choice(["serving", "oz", "slice", "cup"])
-        qty = qty or 1
-        if rng.random() < 0.5:
-            unit = rng.choice(FORCE_UNITS)
-            qty = choose_qty(unit, rng)
-        query = short_name(gold["name"]).lower()
-        rows.append(pick_row(gold, hits, qty, unit, query))
 
     # Hard near-misses: same family, different row (banana vs chips, milk vs almond, …).
     hard = [
@@ -668,8 +689,46 @@ def build_pick(foods: list[dict], n: int, rng: random.Random) -> list[dict]:
         rng.shuffle(extra)
         hits = (decoys + extra)[:7] + [gold]
         rng.shuffle(hits)
-        rows.append(pick_row(gold, hits, qty, unit, query))
+        special.append(pick_row(gold, hits, qty, unit, query))
+        if decoys:
+            # Catalog has near-misses only — pick null, do not invent the true food.
+            special.append(pick_none_row(decoys[:8], qty, unit, query))
 
+    banana_decoys = []
+    for d in ("banana chips", "banana pepper", "banana, dehydrated", "banana nectar"):
+        hit = find_food(all_foods, d)
+        if hit:
+            banana_decoys.append(hit)
+    if banana_decoys:
+        for q, unit in (
+            ("banana", "medium"),
+            ("yellow banana", "medium"),
+            ("fresh banana", "slice"),
+        ):
+            special.append(pick_none_row(banana_decoys[:8], 1, unit, q))
+
+    junk = rng.sample(pool, k=min(8, len(pool)))
+    special.append(pick_none_row(junk, 1, "bowl", "mystery leftover stew"))
+    special.append(pick_none_row(junk, 1, "serving", "dragonfruit boba"))
+    special.append(pick_none_row(junk, 1, "cup", "homemade unlabeled smoothie"))
+
+    budget = max(80, n - len(special))
+    while len(core) < budget and attempts < n * 12:
+        attempts += 1
+        gold = rng.choice(pool)
+        distractors = rng.sample([f for f in pool if f["id"] != gold["id"]], k=min(7, len(pool) - 1))
+        hits = distractors + [gold]
+        rng.shuffle(hits)
+        qty, unit = parse_label(gold.get("serveLabel") or "")
+        unit = unit or rng.choice(["serving", "oz", "slice", "cup"])
+        qty = qty or 1
+        if rng.random() < 0.5:
+            unit = rng.choice(FORCE_UNITS)
+            qty = choose_qty(unit, rng)
+        query = short_name(gold["name"]).lower()
+        core.append(pick_row(gold, hits, qty, unit, query))
+
+    rows = core[:budget] + special
     rng.shuffle(rows)
     return rows[:n]
 
@@ -733,6 +792,9 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
         ("guess calories for mystery leftover soup", "I won't guess. If you can name the ingredients or find a similar USDA soup, I can use that row. Otherwise I don't have a number."),
         ("just make up the calories for leftover stew", "I don't invent calories. Name the stew or the ingredients and I'll use a USDA row, or we leave it unmatched."),
         ("can you estimate my homemade chili without ingredients", "Not accurately. List what's in it (beef, beans, tomatoes, …) and I'll log those USDA foods."),
+        ("how many calories if the catalog has no dragonfruit soda?", "I don't have a USDA row for dragonfruit soda in this catalog, so I won't invent a number. If you can name a close drink I do have, I'll use that convert_portion line."),
+        ("how many calories in a banana if this catalog has no bananas?", "If there's no banana USDA row in context I pick null and leave it unmatched. convert_portion never runs without a matching row, so I won't invent kcal."),
+        ("can you just use banana chips calories for a banana?", "No. Banana chips are a different USDA row. If the fruit banana isn't in the catalog I refuse rather than cite chips."),
         ("do you know MyFitnessPal", "I don't compare notes with other apps. I match your foods to USDA servings here on device."),
         ("what's for dinner", "Whatever you have. Name it and I'll log USDA portions; I won't invent a menu."),
         ("nice", "Whenever you're ready to log, send the meal."),
@@ -779,6 +841,16 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
             f"{kcal_line(cap)} convert_portion 1 tall → {int(round(r['grams']))} g, {r['kcal']} kcal, which is "
             f"{'under' if r['kcal'] <= 200 else 'over'} a 200 kcal drink budget.",
             "fit",
+        )
+    banana = find_food(foods, "banana, raw") or find_food(foods, "banana")
+    if banana:
+        bg = float(banana["serveG"])
+        add(
+            "is a slice of banana about a fifth of a medium?",
+            f"A USDA {banana['serveLabel']} is {int(round(bg))} g. Slice isn't a USDA unit for banana — "
+            f"a household slice is roughly 1/5–1/6 of that medium (~{int(round(100 / 6))}–{int(round(100 / 5))}% by weight). "
+            f"convert_portion still needs the banana row; if the catalog has no banana I pick null and don't invent kcal.",
+            "units",
         )
 
     while len(rows) < n:

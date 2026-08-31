@@ -26,7 +26,13 @@ export type AnalyzeResult = {
   ms: number
 }
 
-export const VLM_ID = 'onnx-community/LFM2.5-VL-450M-ONNX'
+export const HF_VLM_ID = 'onnx-community/LFM2.5-VL-450M-ONNX'
+export const LOCAL_ONNX_ID = '/models/lfm25vl-opencal'
+/** Active transformers.js model id. Hugging Face only if no local ONNX is present. */
+export let VLM_ID = HF_VLM_ID
+
+type VlmBackend = 'http' | 'transformers'
+let backend: VlmBackend | null = null
 
 export type VlmState = 'idle' | 'downloading' | 'ready' | 'error'
 
@@ -81,6 +87,31 @@ export function subscribeVlm(fn: (s: VlmStatus) => void): () => void {
   }
 }
 
+async function detectBackend(): Promise<VlmBackend> {
+  if (backend) return backend
+  try {
+    const r = await fetch('/vlm/health', { cache: 'no-store' })
+    if (r.ok) {
+      backend = 'http'
+      return backend
+    }
+  } catch {
+    // Dev proxy is optional; fall through to on-device ONNX.
+  }
+  backend = 'transformers'
+  return backend
+}
+
+async function resolveTransformersId(): Promise<string> {
+  try {
+    const r = await fetch(`${LOCAL_ONNX_ID}/config.json`, { cache: 'no-store' })
+    if (r.ok) return LOCAL_ONNX_ID
+  } catch {
+    // No local ONNX bundle in public/models.
+  }
+  return HF_VLM_ID
+}
+
 function hasWebGpu(): boolean {
   return typeof navigator !== 'undefined' && Boolean((navigator as Navigator & { gpu?: unknown }).gpu)
 }
@@ -114,11 +145,37 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
   if (session) return session
   if (loadPromise) return loadPromise
   loadPromise = (async () => {
-    setStatus({ state: 'downloading', message: 'Downloading on-device vision…', pct: 4 })
-    onProgress?.('Downloading on-device vision…', 4)
+    const kind = await detectBackend()
+    if (kind === 'http') {
+      setStatus({ state: 'ready', message: 'Local OpenCal vision ready', pct: 100 })
+      onProgress?.('Local OpenCal vision ready', 100)
+      // Dummy session; extract/pick go through /vlm.
+      const dummy = {
+        processor: {
+          tokenizer: async () => ({ input_ids: { dims: [0] } }),
+          batch_decode: () => [''],
+        },
+        model: { generate: async () => ({ slice: () => [] }) },
+        runProcessor: async () => ({ input_ids: { dims: [0] } }),
+        loadImage: async () => null,
+      } as unknown as Session
+      session = dummy
+      return dummy
+    }
+
+    setStatus({ state: 'downloading', message: 'Loading on-device vision…', pct: 4 })
+    onProgress?.('Loading on-device vision…', 4)
     const tf = await import('@huggingface/transformers')
+    const env = (tf as { env?: { allowLocalModels?: boolean } }).env
+    if (env) env.allowLocalModels = true
+    VLM_ID = await resolveTransformersId()
+    const local = VLM_ID.startsWith('/')
     const { device, dtype } = pickRuntime()
-    const preparing = device === 'webgpu' ? 'Preparing WebGPU…' : 'Preparing on-device runtime…'
+    const preparing = local
+      ? 'Loading local OpenCal weights…'
+      : device === 'webgpu'
+        ? 'Preparing WebGPU…'
+        : 'Preparing on-device runtime…'
     setStatus({ message: preparing, pct: 10 })
     onProgress?.(preparing, 10)
 
@@ -126,7 +183,7 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
       progress_callback: (info: { status?: string; progress?: number; file?: string }) => {
         if (info.status === 'progress' && info.progress != null) {
           const pct = 10 + Math.round(info.progress * 0.7)
-          const msg = `Downloading ${info.file ?? 'model'}…`
+          const msg = local ? `Loading ${info.file ?? 'model'}…` : `Downloading ${info.file ?? 'model'}…`
           setStatus({ state: 'downloading', message: msg, pct })
           onProgress?.(msg, pct)
         }
@@ -141,7 +198,7 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
       progress_callback: (info: { status?: string; progress?: number; file?: string }) => {
         if (info.status === 'progress' && info.progress != null) {
           const pct = 20 + Math.round(info.progress * 0.7)
-          const msg = `Downloading ${info.file ?? 'weights'}…`
+          const msg = local ? `Loading ${info.file ?? 'weights'}…` : `Downloading ${info.file ?? 'weights'}…`
           setStatus({ state: 'downloading', message: msg, pct })
           onProgress?.(msg, pct)
         }
@@ -218,6 +275,25 @@ async function completeText(prompt: string, maxNewTokens: number, onProgress?: P
 export async function extractMealText(text: string, onProgress?: ProgressFn): Promise<AnalyzeResult> {
   const started = performance.now()
   try {
+    if ((await detectBackend()) === 'http') {
+      onProgress?.('Finding foods…', 18)
+      const r = await fetch('/vlm/extract-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })
+      const data = (await r.json()) as { raw?: string }
+      const raw = data.raw ?? ''
+      const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
+      const items = parseExtractedFoods(labeled, text)
+      setStatus({ state: 'ready', message: 'Local OpenCal vision ready', pct: 100 })
+      return {
+        raw: stripSpecialTokens(labeled) || labeled,
+        items,
+        path: items.length ? 'vlm' : 'vlm-empty',
+        ms: Math.round(performance.now() - started),
+      }
+    }
     onProgress?.('Finding foods…', 18)
     const prompt = formatChatPrompt(
       [
@@ -252,6 +328,22 @@ export async function extractMealText(text: string, onProgress?: ProgressFn): Pr
 export async function extractMealPhoto(image: Blob, onProgress?: ProgressFn): Promise<AnalyzeResult> {
   const started = performance.now()
   try {
+    if ((await detectBackend()) === 'http') {
+      onProgress?.('Reading the photo…', 16)
+      const body = new FormData()
+      body.append('image', image, 'plate.jpg')
+      const r = await fetch('/vlm/extract-photo', { method: 'POST', body })
+      const data = (await r.json()) as { raw?: string }
+      const raw = data.raw ?? ''
+      const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
+      const items = parseExtractedFoods(labeled)
+      return {
+        raw: stripSpecialTokens(labeled) || labeled,
+        items,
+        path: items.length ? 'vlm' : 'vlm-empty',
+        ms: Math.round(performance.now() - started),
+      }
+    }
     const sess = await loadSession(onProgress)
     onProgress?.('Reading the photo…', 16)
     const img = await sess.loadImage(image)
@@ -300,6 +392,21 @@ export async function pickFoodMatch(
 ): Promise<{ decision: PickDecision; raw: string; ms: number; error?: string }> {
   const started = performance.now()
   try {
+    if ((await detectBackend()) === 'http') {
+      const r = await fetch('/vlm/pick', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meal, item, lines }),
+      })
+      const data = (await r.json()) as { raw?: string }
+      const raw = data.raw ?? ''
+      const labeled = raw.trim().startsWith('{') ? raw : `${PICK_PREFIX}${raw}`
+      return {
+        decision: parsePick(labeled, lines.length),
+        raw: stripSpecialTokens(labeled) || labeled,
+        ms: Math.round(performance.now() - started),
+      }
+    }
     const prompt = formatChatPrompt(
       [
         { role: 'system', content: PICK_SYSTEM },
@@ -315,10 +422,10 @@ export async function pickFoodMatch(
       raw: stripSpecialTokens(labeled) || labeled,
       ms: Math.round(performance.now() - started),
     }
-  } catch (err) {
+    } catch (err) {
     return {
       decision: {
-        index: 0,
+        index: null,
         name: item.query,
         brand: item.brand ?? null,
         unit: item.unit,

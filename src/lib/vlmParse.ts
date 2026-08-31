@@ -18,7 +18,8 @@ Format:
 {"foods":[{"name":"eggs","brand":null,"quantity":2,"unit":"large"},{"name":"banana","brand":null,"quantity":1,"unit":"medium"}]}
 Rules:
 - One object per distinct edible item. Split combos (chicken bowl with rice → chicken, rice). Named sides stay separate (bowl with guacamole and beans → bowl, guacamole, beans).
-- If the user did not say small/medium/large, do not invent a size. A muffin/cookie/bagel with no size word uses unit muffin/cookie/bagel or null, not small.
+- If the user did not say small/medium/large, do not invent a size. A muffin/cookie/bagel with no size word uses unit muffin/cookie/bagel or null, not small. Bare eggs with no size word use unit large.
+- Keep compound grocery names: banana pepper is not banana, turkey bacon is not bacon, egg whites are not whole eggs.
 - name is a short grocery name.
 - brand is only set if the user or package named one, else null.
 - quantity is a number. unit is the household word the user said: large, medium, small, slice, cup, tbsp, tsp, oz, g, fl oz, bowl, handful, can, bottle, grande, tall, bar.
@@ -56,7 +57,8 @@ Rules:
 - pick is the letter of the closest nutrition reference, or null if none match.
 - name is the chosen row's name. Do not output quantity, unit, grams, or calories.
 - Prefer everyday cooked/raw foods over baby food, ingredients, or odd variants.
-- Prefer a typical whole-food serving (medium fruit, large egg, slice of pizza) over a 2–20 g garnish slice, juice fl oz, or "topping from" row unless the user said slice/oz of that item.`
+- Prefer a typical whole-food serving (medium fruit, large egg, slice of pizza) over a 2–20 g garnish slice, juice fl oz, or "topping from" row unless the user said slice/oz of that item.
+- If no hit is the same food (banana chips are not a banana; a pepper is not a banana pepper), pick null. Do not invent a USDA row.`
 
 export const PICK_PREFIX = '{"pick":'
 

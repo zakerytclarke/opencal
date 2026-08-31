@@ -1,0 +1,55 @@
+{
+  "seed": "opencal-pick-v1",
+  "note": "Held-out pick / refuse eval. Hits are assembled at infer time from foods.json. Never copy these meal strings into the train mix.",
+  "test": [
+    {
+      "id": "pick-banana-fruit-missing",
+      "meal": "I had a medium banana after lifting",
+      "query": "banana",
+      "quantity": 1,
+      "unit": "medium",
+      "mode": "exclude_true_food",
+      "trueFoodRe": "banana, raw|bananas, raw",
+      "decoyNeedles": ["banana chips", "banana pepper", "banana nectar", "banana, dehydrated"],
+      "expectPick": null
+    },
+    {
+      "id": "pick-banana-fruit-present",
+      "meal": "snack was one medium banana",
+      "query": "banana",
+      "quantity": 1,
+      "unit": "medium",
+      "mode": "include_true_food",
+      "trueFoodRe": "banana, raw",
+      "expectPick": "true"
+    },
+    {
+      "id": "pick-turkey-bacon-present",
+      "meal": "three slices of turkey bacon",
+      "query": "turkey bacon",
+      "quantity": 3,
+      "unit": "slice",
+      "mode": "include_true_food",
+      "trueFoodRe": "turkey bacon",
+      "expectPick": "true"
+    },
+    {
+      "id": "pick-none-mystery-stew",
+      "meal": "a bowl of mystery leftover stew",
+      "query": "mystery leftover stew",
+      "quantity": 1,
+      "unit": "bowl",
+      "mode": "unrelated",
+      "expectPick": null
+    },
+    {
+      "id": "pick-none-dragonfruit-boba",
+      "meal": "unlabeled dragonfruit boba from a food truck",
+      "query": "dragonfruit boba",
+      "quantity": 1,
+      "unit": "serving",
+      "mode": "unrelated",
+      "expectPick": null
+    }
+  ]
+}

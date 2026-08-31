@@ -339,13 +339,20 @@ const rows: Row[] = [
         [{ raw: 'a banana pepper', query: 'banana', quantity: 1, unit: 'medium' }],
         'a banana pepper',
       )
+      const pepperFromPepper = refineExtracted(
+        [{ raw: 'a banana pepper', query: 'pepper', quantity: 1, unit: 'medium' }],
+        'a banana pepper',
+      )
       const whites = refineExtracted(
         [{ raw: '2 egg whites', query: 'eggs', quantity: 2, unit: 'large' }],
         '2 egg whites',
       )
-      const got = `${foodsLine(pepper)} · ${foodsLine(whites)}`
+      const got = `${foodsLine(pepper)} · ${foodsLine(pepperFromPepper)} · ${foodsLine(whites)}`
       return {
-        pass: /banana pepper/i.test(pepper[0]?.query ?? '') && /egg white/i.test(whites[0]?.query ?? ''),
+        pass:
+          /banana pepper/i.test(pepper[0]?.query ?? '') &&
+          /banana pepper/i.test(pepperFromPepper[0]?.query ?? '') &&
+          /egg white/i.test(whites[0]?.query ?? ''),
         got,
       }
     },
@@ -363,6 +370,21 @@ const rows: Row[] = [
         pass: items.length === 2 && items.some((i) => /turkey bacon/i.test(i.query)) && items.some((i) => /^eggs?$/i.test(i.query)),
         got,
       }
+    },
+  },
+  {
+    id: 32,
+    kind: 'text',
+    name: 'Bare 2 eggs becomes unit large',
+    input: '2 slices turkey bacon and 2 eggs',
+    expect: '2 large eggs',
+    run() {
+      const items = refineExtracted(
+        [{ raw: this.input, query: 'eggs', quantity: 2, unit: 'egg' }],
+        this.input,
+      )
+      const eggs = items.find((i) => /^eggs?$/i.test(i.query))
+      return { pass: eggs?.quantity === 2 && eggs?.unit === 'large', got: foodsLine(items) }
     },
   },
   {

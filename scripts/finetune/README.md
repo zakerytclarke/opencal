@@ -17,7 +17,9 @@ The model still must not invent calories; it names foods and household units. Co
 | Fixture photos | `pizza.jpg` / `bowl.jpg` only — never `banana.jpg` / `eggs.jpg` | Multi-item JSON |
 | Coach | USDA Q&A, refuse-to-guess, small talk, log-routing | Prose or JSON |
 
-Held out forever: `evals/splits/text.json` test, `images.json` test, `coach.json` test.
+Held out forever: `evals/splits/text.json` test, `images.json` test, `coach.json` test, `pick.json` test (meal strings).
+
+## Commands
 
 ## Commands
 
@@ -53,4 +55,18 @@ Or: `bash scripts/finetune/run.sh`
 
 Results: `evals/results/ft-baseline.md`, `ft-finetuned.md`, `ft-compare.md`.
 
-ONNX export for the PWA is a separate step after a checkpoint beats baseline on kcal MAE and coach prose accuracy.
+## Local frontend (no Hugging Face)
+
+```bash
+# Snapshot the checkpoint
+/home/zclarke/ml_env/bin/python scripts/finetune/export.py --skip-onnx
+
+# Serve the fine-tune on :8765 (Vite proxies /vlm)
+/home/zclarke/ml_env/bin/python scripts/finetune/serve.py --ckpt evals/data/finetune/ckpts/lfm25vl-opencal
+
+# In another terminal
+npm run dev
+```
+
+The app probes `/vlm/health` first. If the local server is up, extract/pick/photo go there. Otherwise it loads ONNX from `/models/lfm25vl-opencal` when present, else the public `onnx-community` repo.
+

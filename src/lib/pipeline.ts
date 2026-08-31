@@ -1,5 +1,5 @@
 import { extractFoods, isQuickCalorie, refineExtracted } from './extract'
-import { bestMatch, candidateLines, entryFromFood, quickAddEntry, searchForItem, unmatchedEntry } from './foods'
+import { candidateLines, entryFromFood, quickAddEntry, searchForItem, unmatchedEntry } from './foods'
 import { uid } from './storage'
 import { extractMealPhoto, extractMealText, pickFoodMatch } from './vlm'
 import type { DebugPath, ExtractedItem, Food, LogEntry } from '../types'
@@ -39,7 +39,7 @@ function stamp(entry: LogEntry, meta: {
 function preferReference(item: ExtractedItem, picked: Food | null, hits: Food[], meal: string): Food | null {
   const brand = item.brand?.trim().toLowerCase()
   const hay = `${meal} ${item.query} ${item.unit ?? ''}`.toLowerCase()
-  let food = picked ?? hits[0] ?? null
+  let food = picked
   if (brand && food && !food.name.toLowerCase().includes(brand)) {
     food = hits.find((h) => h.name.toLowerCase().includes(brand)) ?? food
   }
@@ -88,7 +88,6 @@ async function matchOne(
   )
   const pickedFood =
     picked.decision.index != null ? rows[picked.decision.index]?.food ?? null : null
-  const food = preferReference(item, pickedFood, hits, meal)
   const resolved: ExtractedItem = {
     ...item,
     quantity: item.quantity,
@@ -97,12 +96,22 @@ async function matchOne(
     query: item.query,
   }
 
-  if (!food) {
-    const fallback = bestMatch(item.query)
+  // Honor pick-null: no USDA row in context → unmatched, do not invent hits[0].
+  if (picked.decision.index == null) {
     return {
-      entry: fallback
-        ? entryFromFood(fallback, resolved, source, date)
-        : unmatchedEntry(resolved, source, date),
+      entry: unmatchedEntry(resolved, source, date),
+      raw: picked.raw,
+      path: picked.error ? 'error-fallback' : 'vlm',
+      error: picked.error,
+      ms: picked.ms,
+    }
+  }
+
+  const food = preferReference(item, pickedFood, hits, meal)
+
+  if (!food) {
+    return {
+      entry: unmatchedEntry(resolved, source, date),
       raw: picked.raw,
       path: picked.error ? 'error-fallback' : 'vlm',
       error: picked.error,

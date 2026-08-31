@@ -10,6 +10,7 @@ import {
   loadFoods,
   searchForItem,
   searchFoods,
+  unmatchedEntry,
 } from '../src/lib/foods.ts'
 import { parseExtractedFoods, parsePick } from '../src/lib/vlmParse.ts'
 import type { ExtractedItem } from '../src/types.ts'
@@ -600,6 +601,20 @@ const cases: Case[] = [
       return {
         pass: foodSourceLabel('branded-534358') === 'USDA Branded' && url === 'https://fdc.nal.usda.gov/food-details/534358/nutrients',
         got: `${foodSourceLabel('branded-534358')} · ${url}`,
+      }
+    },
+  },
+  {
+    name: 'Pick-null unmatched entry has zero calories',
+    run() {
+      const entry = unmatchedEntry(
+        { raw: 'a medium banana', query: 'banana', quantity: 1, unit: 'medium' },
+        'sentence',
+        '2026-08-31',
+      )
+      return {
+        pass: entry.foodId === 'unmatched' && entry.kcal === 0 && /banana/i.test(entry.name),
+        got: `${entry.foodId} ${entry.kcal}kcal ${entry.name}`,
       }
     },
   },

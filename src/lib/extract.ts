@@ -211,10 +211,18 @@ function specifyFromMeal(item: ExtractedItem, meal: string): ExtractedItem {
   if (/^eggs?$/.test(q) && /\begg whites?\b/.test(n)) {
     return { ...item, query: /\bwhites\b/.test(n) ? 'egg whites' : 'egg white' }
   }
+  if (/^eggs?$/.test(q) && !/\bwhite/.test(n)) {
+    if (/\blarge\b/.test(n)) return { ...item, unit: 'large' }
+    if (/\bsmall\b/.test(n)) return { ...item, unit: 'small' }
+    if (/\bmedium\b/.test(n)) return { ...item, unit: 'medium' }
+    if (!item.unit || /^(egg|piece|item|each)$/i.test(item.unit)) {
+      return { ...item, unit: 'large' }
+    }
+  }
   if (!q || q.length < 3) return item
   const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const m = n.match(new RegExp(`\\b${escaped}s?\\s+([a-z]+)\\b`))
-  const extra = m?.[1]
+  const after = n.match(new RegExp(`\\b${escaped}s?\\s+([a-z]+)\\b`))
+  const extra = after?.[1]
   if (
     extra &&
     !GROUND_STOP.has(extra) &&
@@ -222,6 +230,15 @@ function specifyFromMeal(item: ExtractedItem, meal: string): ExtractedItem {
     /^(pepper|peppers|bacon|white|whites|juice|milk|butter|bread|bowl|bar|yogurt)$/.test(extra)
   ) {
     return { ...item, query: `${q} ${extra}` }
+  }
+  const before = n.match(new RegExp(`\\b([a-z]+)\\s+${escaped}s?\\b`))
+  const prefix = before?.[1]
+  if (
+    prefix &&
+    !q.includes(prefix) &&
+    /^(banana|bell|jalapeno|jalapeño|turkey|pork|canadian|egg|almond|oat|soy|coconut)$/.test(prefix)
+  ) {
+    return { ...item, query: `${prefix} ${q}` }
   }
   return item
 }
@@ -252,6 +269,7 @@ function sameFood(a: string, b: string): boolean {
 
 function stripGuessedSize(item: ExtractedItem, meal: string): ExtractedItem {
   if (!item.unit || !/^(small|medium|large|extra large)$/i.test(item.unit)) return item
+  if (/^eggs?$/i.test(item.query) && item.unit === 'large' && !/\bwhite/i.test(meal)) return item
   if (new RegExp(`\\b${item.unit.replace(/\s+/g, '\\s+')}s?\\b`, 'i').test(meal)) return item
   return { ...item, unit: null }
 }

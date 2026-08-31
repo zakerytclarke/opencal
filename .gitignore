@@ -32,3 +32,4 @@ evals/results/*
 evals/splits/images.foodd.json
 scripts/__pycache__/
 scripts/**/__pycache__/
+public/models/lfm25vl-opencal/
