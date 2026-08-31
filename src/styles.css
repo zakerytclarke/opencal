@@ -210,6 +210,10 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 .food-name { font-weight: 650; color: var(--hero); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .food-sub { color: var(--mute); font-size: 12px; }
 .food-kcal { font-weight: 750; color: var(--hero); }
+.food-src {
+  flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; text-decoration: none;
+  display: grid; place-items: center; color: var(--lake); background: var(--sky);
+}
 .food-del { border: 0; background: transparent; color: var(--mute); padding: 6px; }
 .food-row.is-pending { opacity: 0.92; }
 .spinner {
@@ -219,7 +223,11 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty { color: var(--slate); padding: 12px 8px 16px; }
+.settings-cite { margin: 10px 0 0; color: var(--slate); font-size: 13px; line-height: 1.45; }
+.source-links { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.source-links a { color: var(--lake); font-weight: 650; font-size: 14px; text-decoration: none; }
 .db-note { text-align: center; color: var(--mute); font-size: 12px; margin: 8px 0 0; }
+.db-note a { color: var(--mute); }
 
 .dock {
   position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
@@ -312,7 +320,11 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
   padding: 10px 12px 4px; font-size: 11px; font-weight: 750; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--mute);
 }
-.suggest-row { width: 100%; }
+.suggest-row { width: 100%; padding-right: 4px; }
+.suggest-pick {
+  display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
+  border: 0; background: transparent; text-align: left; padding: 0; color: inherit;
+}
 .suggest-add { color: var(--lake); font-size: 12px; font-weight: 750; padding-right: 4px; }
 
 @media (min-width: 800px) {

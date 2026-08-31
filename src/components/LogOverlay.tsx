@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { extractFoods, isQuickCalorie, looksLikeSentence } from '../lib/extract'
 import { filterRecents, recentLoggedFoods } from '../lib/diary'
-import { entryFromFood, repeatEntry, searchFoods } from '../lib/foods'
+import { entryFromFood, foodSourceLabel, foodSourceUrl, repeatEntry, searchFoods } from '../lib/foods'
 import { canListen, listen, type SpeechHandle } from '../lib/speech'
 import { warmupVlm } from '../lib/vlm'
 import type { Diary, ExtractedItem, Food, LogEntry } from '../types'
@@ -28,6 +28,7 @@ function SuggestRow({
   sub,
   kcal,
   badge,
+  sourceId,
   onClick,
 }: {
   emoji: string
@@ -35,23 +36,43 @@ function SuggestRow({
   sub: string
   kcal: number
   badge?: string
+  sourceId?: string
   onClick: () => void
 }) {
+  const sourceUrl = sourceId ? foodSourceUrl(sourceId, name) : null
+  const sourceLabel = sourceId ? foodSourceLabel(sourceId) : null
   return (
-    <button type="button" className="result suggest-row" onClick={onClick}>
-      <span className="food-emoji" aria-hidden>
-        {emoji}
-      </span>
-      <span className="food-main">
-        <span className="food-name">{name}</span>
-        <span className="food-sub">
-          {badge ? `${badge} · ` : ''}
-          {sub}
+    <div className="result suggest-row">
+      <button type="button" className="suggest-pick" onClick={onClick}>
+        <span className="food-emoji" aria-hidden>
+          {emoji}
         </span>
-      </span>
-      <span className="food-kcal">{Math.round(kcal)}</span>
-      <span className="suggest-add">Add</span>
-    </button>
+        <span className="food-main">
+          <span className="food-name">{name}</span>
+          <span className="food-sub">
+            {badge ? `${badge} · ` : ''}
+            {sub}
+          </span>
+        </span>
+        <span className="food-kcal">{Math.round(kcal)}</span>
+        <span className="suggest-add">Add</span>
+      </button>
+      {sourceUrl && (
+        <a
+          className="food-src"
+          href={sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`${sourceLabel} source for ${name}`}
+          title={`${sourceLabel} · USDA FoodData Central`}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+            <path d="M12 11v5.5M12 8h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+        </a>
+      )}
+    </div>
   )
 }
 
@@ -199,6 +220,7 @@ export function LogOverlay({ kind, date, diary, onClose, onQueue, onQuick, onIns
                   sub={`${entry.brand ? `${entry.brand} · ` : ''}${entry.serveLabel}`}
                   kcal={entry.kcal}
                   badge="Logged"
+                  sourceId={entry.foodId !== 'quick' && entry.foodId !== 'unmatched' ? entry.foodId : undefined}
                   onClick={() => pickRecent(entry)}
                 />
               ))}
@@ -214,6 +236,7 @@ export function LogOverlay({ kind, date, diary, onClose, onQueue, onQuick, onIns
                   name={food.name}
                   sub={food.serveLabel}
                   kcal={Math.round(food.kcal * (food.serveG / 100))}
+                  sourceId={food.id}
                   onClick={() => pickMatch(food)}
                 />
               ))}

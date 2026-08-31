@@ -45,6 +45,31 @@ export function foodCount(): number {
   return foods.length
 }
 
+export const USDA_FDC = 'https://fdc.nal.usda.gov/'
+export const USDA_DATASETS = 'https://fdc.nal.usda.gov/download-datasets'
+export const USDA_DOCS = 'https://fdc.nal.usda.gov/data-documentation'
+
+export function fdcIdFromFoodId(id: string): string | null {
+  const m = /^(?:fndds|foundation|sr)-(\d+)$/.exec(id)
+  return m?.[1] ?? null
+}
+
+export function foodSourceLabel(id: string): string {
+  if (id.startsWith('fndds-')) return 'USDA FNDDS'
+  if (id.startsWith('foundation-')) return 'USDA Foundation'
+  if (id.startsWith('sr-')) return 'USDA SR Legacy'
+  if (id.startsWith('extra-')) return 'Compiled'
+  return 'USDA'
+}
+
+/** Public USDA page for this food, or a FoodData Central search if it is a compiled extra. */
+export function foodSourceUrl(id: string, name?: string): string {
+  const fdc = fdcIdFromFoodId(id)
+  if (fdc) return `https://fdc.nal.usda.gov/food-details/${fdc}/nutrients`
+  if (name) return `https://fdc.nal.usda.gov/food-search?query=${encodeURIComponent(name)}`
+  return USDA_FDC
+}
+
 function wordBoundaryHas(hay: string, needle: string): boolean {
   if (!needle) return false
   const re = new RegExp(`(?:^|\\s)${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:s)?(?:\\s|$)`)

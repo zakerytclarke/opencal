@@ -107,11 +107,9 @@ export default function App() {
 
     void (async () => {
       try {
-        const entries =
-          payload.kind === 'photo'
-            ? await logFromPhoto(payload.file, date, handlers)
-            : await logFromText(payload.text, date, payload.source, handlers)
-        void entries
+        await (payload.kind === 'photo'
+          ? logFromPhoto(payload.file, date, handlers)
+          : logFromText(payload.text, date, payload.source, handlers))
         patchJob(id, { status: 'done', step: 'Done', pct: 100, pending: [] })
         window.setTimeout(() => {
           setJobs((list) => {

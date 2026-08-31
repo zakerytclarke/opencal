@@ -3,6 +3,9 @@ import { extractFoods } from '../src/lib/extract.ts'
 import {
   candidateLines,
   entryFromFood,
+  fdcIdFromFoodId,
+  foodSourceLabel,
+  foodSourceUrl,
   loadFoods,
   searchForItem,
   searchFoods,
@@ -436,6 +439,53 @@ const cases: Case[] = [
         pass: entry.name === 'Greek Yogurt' && entry.brand == null && entry.foodId === food.id,
         got: `${entry.name} brand=${entry.brand ?? 'none'} · ref ${food.name}`,
       }
+    },
+  },
+  {
+    name: 'USDA foods link to FoodData Central by FDC ID',
+    run() {
+      const food = searchFoods('turkey bacon', 8).find((f) => /turkey bacon/i.test(f.name) && !/grease/i.test(f.name))
+      if (!food) return { pass: false, got: 'no turkey bacon' }
+      const fdc = fdcIdFromFoodId(food.id)
+      const url = foodSourceUrl(food.id, food.name)
+      return {
+        pass: fdc === '2706135' && url === 'https://fdc.nal.usda.gov/food-details/2706135/nutrients',
+        got: `${food.id} · ${foodSourceLabel(food.id)} · ${url}`,
+      }
+    },
+  },
+  {
+    name: 'Foundation and SR foods keep their FDC IDs',
+    run() {
+      const foundation = foodSourceUrl('foundation-331897', 'Milk, whole')
+      const sr = foodSourceUrl('sr-171287', 'Bananas, raw')
+      return {
+        pass:
+          foundation === 'https://fdc.nal.usda.gov/food-details/331897/nutrients' &&
+          sr === 'https://fdc.nal.usda.gov/food-details/171287/nutrients',
+        got: `${foundation} · ${sr}`,
+      }
+    },
+  },
+  {
+    name: 'Compiled extras search USDA by name, not a fake FDC ID',
+    run() {
+      const url = foodSourceUrl('extra-5137788', 'Avocado Toast')
+      return {
+        pass:
+          foodSourceLabel('extra-5137788') === 'Compiled' &&
+          fdcIdFromFoodId('extra-5137788') == null &&
+          url.includes('food-search') &&
+          decodeURIComponent(url).includes('Avocado Toast'),
+        got: url,
+      }
+    },
+  },
+  {
+    name: 'Quick add and unmatched have no FDC id',
+    run() {
+      const pass = fdcIdFromFoodId('quick') == null && fdcIdFromFoodId('unmatched') == null
+      return { pass, got: pass ? 'none' : 'unexpected id' }
     },
   },
 ]

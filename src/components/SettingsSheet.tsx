@@ -1,4 +1,4 @@
-import { foodCount } from '../lib/foods'
+import { USDA_DATASETS, USDA_DOCS, USDA_FDC, foodCount } from '../lib/foods'
 import { kgToLb } from '../lib/plan'
 import type { Profile } from '../types'
 
@@ -83,8 +83,49 @@ export function SettingsSheet({ profile, onClose, onResetOnboarding, onDeleteLog
         </li>
       </ul>
 
+      <section className="settings-card">
+        <div className="micro">Nutrition data</div>
+        <p className="settings-lead">Calories come from USDA FoodData Central, stored on this device.</p>
+        <ul className="source-links">
+          <li>
+            <a href={USDA_FDC} target="_blank" rel="noopener noreferrer">
+              USDA FoodData Central
+            </a>
+          </li>
+          <li>
+            <a href={`${USDA_FDC}food-search?type=Survey%20(FNDDS)`} target="_blank" rel="noopener noreferrer">
+              FNDDS survey foods
+            </a>
+          </li>
+          <li>
+            <a href={`${USDA_FDC}food-search?type=Foundation`} target="_blank" rel="noopener noreferrer">
+              Foundation Foods
+            </a>
+          </li>
+          <li>
+            <a href={`${USDA_FDC}food-search?type=SR%20Legacy`} target="_blank" rel="noopener noreferrer">
+              SR Legacy
+            </a>
+          </li>
+          <li>
+            <a href={USDA_DATASETS} target="_blank" rel="noopener noreferrer">
+              Download the USDA datasets
+            </a>
+          </li>
+          <li>
+            <a href={USDA_DOCS} target="_blank" rel="noopener noreferrer">
+              Data documentation
+            </a>
+          </li>
+        </ul>
+        <p className="settings-cite">
+          A few restaurant and packaged items use typical published values. Each logged food has an info link to its USDA
+          record when one exists.
+        </p>
+      </section>
+
       <p className="db-note settings-note">
-        {foodCount().toLocaleString()} foods on this device · USDA + compiled
+        {foodCount().toLocaleString()} foods on this device
       </p>
     </div>
   )

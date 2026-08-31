@@ -9,7 +9,7 @@ import { VlmStatusBar } from '../components/VlmStatus'
 import { NutritionCard } from '../components/NutritionCard'
 import { groupBatches } from '../lib/batches'
 import { loggedDays, totals } from '../lib/diary'
-import { foodCount } from '../lib/foods'
+import { USDA_FDC, foodCount } from '../lib/foods'
 import type { Diary, LogJob, Profile } from '../types'
 
 type Props = {
@@ -103,7 +103,11 @@ export function Home({
       </section>
 
       <VlmStatusBar />
-      <p className="db-note">{foodCount().toLocaleString()} foods on this device · USDA + compiled</p>
+      <p className="db-note">
+        <a href={USDA_FDC} target="_blank" rel="noopener noreferrer">
+          {foodCount().toLocaleString()} foods on this device · USDA FoodData Central
+        </a>
+      </p>
       <BottomBar onVoice={onVoice} onSearch={onSearch} onPhoto={onPhoto} />
 
       {calendar && <div className="backdrop" onClick={() => setCalendar(false)} />}
