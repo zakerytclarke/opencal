@@ -17,7 +17,7 @@ The model still must not invent calories; it names foods and household units. Co
 | Fixture photos | `pizza.jpg` / `bowl.jpg` only — never `banana.jpg` / `eggs.jpg` | Multi-item JSON |
 | Coach | USDA Q&A, refuse-to-guess, small talk, log-routing | Prose or JSON |
 
-Held out forever: `evals/splits/text.json` test, `images.json` test, `coach.json` test, `pick.json` test (meal strings).
+Held out forever: `evals/splits/text.json` test, `images.json` test, `coach.json` test, `pick.json` test (meal strings), `cite.json` test.
 
 ## Commands
 

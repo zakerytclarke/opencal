@@ -29,7 +29,9 @@ from prompts import (  # noqa: E402
     EXTRACT_USER,
     PHOTO_EXTRACT_SYSTEM,
     PHOTO_EXTRACT_USER,
+    PICK_NONE_LINE,
     PICK_SYSTEM,
+    PICK_USER_TAIL,
 )
 
 DEFAULT_CKPT = ROOT / "evals" / "data" / "finetune" / "ckpts" / "lfm25vl-opencal"
@@ -90,8 +92,8 @@ def pick(meal: str, item: dict, lines: list[str]) -> dict:
             f"Item: {query}{brand_s}{', about ' + portion if portion else ''}",
             "Database hits (USDA reference + convert_portion for this item):",
             *lines,
-            "None. no match",
-            "Pick the closest nutrition reference letter. Keep the user name, brand, and portion. Do not output grams or calories.",
+            PICK_NONE_LINE,
+            PICK_USER_TAIL,
         ]
     )
     messages = [

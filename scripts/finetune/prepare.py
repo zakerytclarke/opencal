@@ -28,6 +28,7 @@ TEXT_SPLIT = ROOT / "evals" / "splits" / "text.json"
 IMAGE_SPLIT = ROOT / "evals" / "splits" / "images.json"
 COACH_SPLIT = ROOT / "evals" / "splits" / "coach.json"
 PICK_SPLIT = ROOT / "evals" / "splits" / "pick.json"
+CITE_SPLIT = ROOT / "evals" / "splits" / "cite.json"
 OUT_DIR = ROOT / "evals" / "data" / "finetune"
 IMG_DIR = OUT_DIR / "images"
 # Held-out vision eval. Never copy these into train JSONL.
@@ -44,7 +45,9 @@ from prompts import (  # noqa: E402
     EXTRACT_USER,
     PHOTO_EXTRACT_SYSTEM,
     PHOTO_EXTRACT_USER,
+    PICK_NONE_LINE,
     PICK_SYSTEM,
+    PICK_USER_TAIL,
 )
 
 NICE_UNIT = re.compile(
@@ -212,6 +215,9 @@ def banned_texts() -> set[str]:
     if PICK_SPLIT.exists():
         for row in load_json(PICK_SPLIT).get("test") or []:
             banned.add(norm(row["meal"]))
+    if CITE_SPLIT.exists():
+        for row in load_json(CITE_SPLIT).get("test") or []:
+            banned.add(norm(row["user"]))
     return banned
 
 
@@ -601,8 +607,8 @@ def build_pick_prompt(gold: dict, hits: list[dict], qty: float, unit: str, query
             f"Item: {query}, about {qty_num(qty)} {unit}",
             "Database hits (USDA reference + convert_portion for this item):",
             *lines,
-            "None. no match",
-            "Pick the closest nutrition reference letter. Keep the user name, brand, and portion. Do not output grams or calories.",
+            PICK_NONE_LINE,
+            PICK_USER_TAIL,
         ]
     )
     assistant = json.dumps({"pick": letter, "name": gold["name"]}, separators=(",", ":"))
@@ -620,8 +626,8 @@ def pick_none_row(hits: list[dict], qty: float, unit: str, query: str) -> dict:
             f"Item: {query}, about {qty_num(qty)} {unit}",
             "Database hits (USDA reference + convert_portion for this item):",
             *lines,
-            "None. no match",
-            "Pick the closest nutrition reference letter. Keep the user name, brand, and portion. Do not output grams or calories.",
+            PICK_NONE_LINE,
+            PICK_USER_TAIL,
         ]
     )
     assistant = json.dumps({"pick": None, "name": None}, separators=(",", ":"))
@@ -716,9 +722,8 @@ def build_pick(foods: list[dict], n: int, rng: random.Random) -> list[dict]:
     while len(core) < budget and attempts < n * 12:
         attempts += 1
         gold = rng.choice(pool)
-        distractors = rng.sample([f for f in pool if f["id"] != gold["id"]], k=min(7, len(pool) - 1))
-        hits = distractors + [gold]
-        rng.shuffle(hits)
+        others = [f for f in pool if f["id"] != gold["id"]]
+        distractors = rng.sample(others, k=min(7, len(others)))
         qty, unit = parse_label(gold.get("serveLabel") or "")
         unit = unit or rng.choice(["serving", "oz", "slice", "cup"])
         qty = qty or 1
@@ -726,6 +731,12 @@ def build_pick(foods: list[dict], n: int, rng: random.Random) -> list[dict]:
             unit = rng.choice(FORCE_UNITS)
             qty = choose_qty(unit, rng)
         query = short_name(gold["name"]).lower()
+        # ~28%: true food removed from hits — same as deleting banana from the catalog.
+        if rng.random() < 0.28:
+            core.append(pick_none_row(distractors[:8], qty, unit, query))
+            continue
+        hits = distractors + [gold]
+        rng.shuffle(hits)
         core.append(pick_row(gold, hits, qty, unit, query))
 
     rows = core[:budget] + special
@@ -852,13 +863,37 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
             f"convert_portion still needs the banana row; if the catalog has no banana I pick null and don't invent kcal.",
             "units",
         )
+    pb = find_food(foods, "peanut butter")
+    if pb:
+        from portions import convert_portion
+
+        two = convert_portion(pb, 2, "tbsp")
+        add(
+            "how do you turn 2 tbsp of peanut butter into grams and kcal?",
+            f"USDA {pb['serveLabel']} ({int(round(float(pb['serveG'])))} g). "
+            f"convert_portion 2 tbsp → {int(round(two['grams']))} g, {two['kcal']} kcal "
+            f"from the per-100 g value of {pb['kcal']:g} kcal. I don't invent a tablespoon mass.",
+            "units",
+        )
+    oats = find_food(foods, "oatmeal, cooked") or find_food(foods, "oatmeal")
+    if oats:
+        from portions import convert_portion
+
+        half = convert_portion(oats, 0.5, "cup")
+        add(
+            "walk through convert_portion for half a cup of cooked oatmeal",
+            f"USDA {oats['serveLabel']} ({int(round(float(oats['serveG'])))} g). "
+            f"convert_portion 0.5 cup → {int(round(half['grams']))} g, {half['kcal']} kcal "
+            f"(kcal = per-100 g × grams / 100). No USDA row means I refuse, not guess.",
+            "units",
+        )
 
     while len(rows) < n:
         food = rng.choice(compiled if rng.random() < 0.5 else pool)
         name = short_name(food["name"])
         fact = kcal_line(food)
         protein = round(float(food["protein"]) * float(food["serveG"]) / 100, 1)
-        kind = rng.choice(["kcal", "protein", "log", "fit", "chat2", "refuse"])
+        kind = rng.choice(["kcal", "protein", "log", "fit", "chat2", "refuse", "units"])
         if kind == "kcal":
             add(
                 rng.choice(
@@ -909,6 +944,24 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
                 ),
                 "I don't guess unlabeled leftovers. If you can name the ingredients I can match USDA rows; otherwise I don't have a number.",
                 "refuse",
+            )
+        elif kind == "units":
+            from portions import convert_portion
+
+            qty, unit = parse_label(food.get("serveLabel") or "")
+            unit = unit or "serving"
+            qty = qty or 1
+            r = convert_portion(food, qty, unit)
+            add(
+                rng.choice(
+                    [
+                        f"how does convert_portion get grams for {name}?",
+                        f"cite the USDA conversion for {name}",
+                    ]
+                ),
+                f"{fact} convert_portion {qty_num(qty)} {unit} → {int(round(r['grams']))} g, {r['kcal']} kcal "
+                f"from that row. If this catalog has no matching row I pick null and do not invent kcal.",
+                "units",
             )
         else:
             add(

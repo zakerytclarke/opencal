@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import random
 import re
 import sys
 from pathlib import Path
@@ -22,7 +24,9 @@ from prompts import (  # noqa: E402
     EXTRACT_USER,
     PHOTO_EXTRACT_SYSTEM,
     PHOTO_EXTRACT_USER,
+    PICK_NONE_LINE,
     PICK_SYSTEM,
+    PICK_USER_TAIL,
 )
 
 EXTRACT_PREFIX = '{"foods":['
@@ -112,7 +116,7 @@ def parse_pick_letter(text: str) -> str | None:
     if value is None:
         return None
     s = str(value).strip()
-    if not s or re.match(r"^(none|null|no)$", s, re.I):
+    if not s or re.match(r"^(none|null|no|n)$", s, re.I):
         return None
     return s.upper()[:1] if s else None
 
@@ -127,6 +131,7 @@ def _find_food(foods: list[dict], needle: str) -> dict | None:
 
 
 def build_pick_case(foods: list[dict], case: dict) -> dict:
+    rng = random.Random(int(hashlib.md5(str(case["id"]).encode()).hexdigest(), 16) % (2**31))
     qty = float(case.get("quantity") or 1)
     unit = str(case.get("unit") or "serving")
     query = str(case["query"])
@@ -140,6 +145,7 @@ def build_pick_case(foods: list[dict], case: dict) -> dict:
             if hit and not true_re.search(hit.get("name") or ""):
                 hits.append(hit)
         extra = [f for f in foods if f.get("kcal", 0) >= 5 and not true_re.search(f.get("name") or "")]
+        rng.shuffle(extra)
         for f in extra:
             if f["id"] not in {h["id"] for h in hits}:
                 hits.append(f)
@@ -150,11 +156,15 @@ def build_pick_case(foods: list[dict], case: dict) -> dict:
             foods, query
         )
         distractors = [f for f in foods if f.get("kcal", 0) >= 5 and (not gold or f["id"] != gold["id"])]
+        rng.shuffle(distractors)
         hits = distractors[:7]
         if gold:
             hits.append(gold)
+            rng.shuffle(hits)
     else:
-        hits = [f for f in foods if f.get("kcal", 0) >= 5][:8]
+        pool = [f for f in foods if f.get("kcal", 0) >= 5]
+        rng.shuffle(pool)
+        hits = pool[:8]
 
     hits = hits[:8]
     lines = []
@@ -170,8 +180,8 @@ def build_pick_case(foods: list[dict], case: dict) -> dict:
             f"Item: {query}, about {qty:g} {unit}",
             "Database hits (USDA reference + convert_portion for this item):",
             *lines,
-            "None. no match",
-            "Pick the closest nutrition reference letter. Keep the user name, brand, and portion. Do not output grams or calories.",
+            PICK_NONE_LINE,
+            PICK_USER_TAIL,
         ]
     )
     expect = case.get("expectPick")
@@ -319,10 +329,29 @@ def main() -> None:
         n_ok = sum(1 for r in pick_preds if r["ok"])
         print(f"pick {n_ok}/{len(pick_preds)}", flush=True)
 
+    cite_split = ROOT / "evals/splits/cite.json"
+    cite_preds = []
+    if cite_split.exists():
+        for row in load_json(cite_split)["test"]:
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": COACH_SYSTEM}]},
+                {"role": "user", "content": [{"type": "text", "text": row["user"]}]},
+            ]
+            raw = generate(model, processor, messages, 180, device)
+            is_json = bool(parse_foods(raw))
+            must = [m.lower() for m in row.get("must") or []]
+            must_not = row.get("mustNot") or []
+            ok = (not is_json) and all(m in raw.lower() for m in must) and all(x not in raw for x in must_not)
+            cite_preds.append({"id": row["id"], "user": row["user"], "raw": raw, "ok": ok})
+            print(f"CITE {row['id']} → {'ok' if ok else 'miss'} {raw[:90]!r}", flush=True)
+        print(f"cite {sum(1 for r in cite_preds if r['ok'])}/{len(cite_preds)}", flush=True)
+
     (out_dir / "extracts.json").write_text(json.dumps(extracts, indent=2) + "\n")
     (out_dir / "coach.json").write_text(json.dumps(coach, indent=2) + "\n")
     if pick_preds:
         (out_dir / "pick.json").write_text(json.dumps(pick_preds, indent=2) + "\n")
+    if cite_preds:
+        (out_dir / "cite.json").write_text(json.dumps(cite_preds, indent=2) + "\n")
     print(f"wrote {out_dir}")
 
 

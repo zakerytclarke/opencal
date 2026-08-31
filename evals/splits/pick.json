@@ -1,5 +1,5 @@
 {
-  "seed": "opencal-pick-v1",
+  "seed": "opencal-pick-v2",
   "note": "Held-out pick / refuse eval. Hits are assembled at infer time from foods.json. Never copy these meal strings into the train mix.",
   "test": [
     {
@@ -32,6 +32,28 @@
       "mode": "include_true_food",
       "trueFoodRe": "turkey bacon",
       "expectPick": "true"
+    },
+    {
+      "id": "pick-milk-dairy-missing",
+      "meal": "a glass of regular milk with dinner",
+      "query": "milk",
+      "quantity": 1,
+      "unit": "glass",
+      "mode": "exclude_true_food",
+      "trueFoodRe": "^milk$|^milk, |milk, whole|milk, 2%|milk, lowfat|milk, skim",
+      "decoyNeedles": ["almond milk", "oat milk", "soy milk", "coconut milk"],
+      "expectPick": null
+    },
+    {
+      "id": "pick-pb-missing",
+      "meal": "two tablespoons of peanut butter on toast",
+      "query": "peanut butter",
+      "quantity": 2,
+      "unit": "tbsp",
+      "mode": "exclude_true_food",
+      "trueFoodRe": "peanut butter",
+      "decoyNeedles": ["peanut oil", "peanuts, dry roasted", "peanut sauce"],
+      "expectPick": null
     },
     {
       "id": "pick-none-mystery-stew",

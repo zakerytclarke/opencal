@@ -1,5 +1,5 @@
 import { extractFoods, isQuickCalorie, refineExtracted } from '../src/lib/extract.ts'
-import { EXTRACT_SYSTEM, PICK_SYSTEM, formatChatPrompt, parseExtractedFoods, parsePick } from '../src/lib/vlmParse.ts'
+import { EXTRACT_SYSTEM, PICK_SYSTEM, formatChatPrompt, parseExtractedFoods, parsePick, pickUserPrompt } from '../src/lib/vlmParse.ts'
 
 type Row = {
   id: number
@@ -143,7 +143,11 @@ const rows: Row[] = [
     expect: 'no match · mystery slop',
     run() {
       const p = parsePick(this.input, 4)
-      return { pass: p.index === null && p.name === 'mystery slop', got: p.index == null ? `no match · ${p.name}` : `index ${p.index}` }
+      const n = parsePick('{"pick":"N","name":null}', 8)
+      return {
+        pass: p.index === null && p.name === 'mystery slop' && n.index === null,
+        got: p.index == null && n.index == null ? `no match · ${p.name}` : `index ${p.index}/${n.index}`,
+      }
     },
   },
   {
@@ -468,9 +472,21 @@ const rows: Row[] = [
     expect: 'convert_portion already ran',
     run() {
       const s = PICK_SYSTEM
+      const prompt = pickUserPrompt({
+        meal: 'a banana',
+        item: { raw: 'a banana', query: 'banana', quantity: 1, unit: 'medium' },
+        lines: ['A. Banana chips · convert_portion 1 medium'],
+      })
       return {
-        pass: /convert_portion/.test(s) && /do not invent numbers/i.test(s) && /do not output quantity, unit, grams, or calories/i.test(s),
-        got: /convert_portion/.test(s) ? 'tools named' : 'missing tools',
+        pass:
+          /convert_portion/.test(s) &&
+          /do not invent numbers/i.test(s) &&
+          /do not output quantity, unit, grams, or calories/i.test(s) &&
+          /pick":null/.test(s) &&
+          /N\. None/.test(prompt) &&
+          /pick null/i.test(prompt) &&
+          !/closest nutrition reference letter/i.test(prompt),
+        got: /pick":null/.test(s) && /N\. None/.test(prompt) ? 'null option lettered' : 'missing null option',
       }
     },
   },

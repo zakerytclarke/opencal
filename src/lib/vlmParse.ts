@@ -51,16 +51,22 @@ export const PHOTO_EXTRACT_USER = 'What foods are in this photo? Count items and
 export const PICK_SYSTEM = `You pick a local USDA nutrition reference row.
 Calories and grams are already computed by convert_portion from USDA per-100 g values and household weights. Do not invent numbers or change the portion.
 You are given the user's meal, this item, and lettered hits. Each hit includes convert_portion for this item's quantity and unit.
-Reply with JSON only:
+Reply with JSON only. Same food:
 {"pick":"A","name":"Oatmeal, cooked"}
+No matching row:
+{"pick":null,"name":null}
 Rules:
-- pick is the letter of the closest nutrition reference, or null if none match.
-- name is the chosen row's name. Do not output quantity, unit, grams, or calories.
+- pick is the letter of the same food, or null if none of the hits is that food.
+- name is the chosen row's name, or null when pick is null. Do not output quantity, unit, grams, or calories.
 - Prefer everyday cooked/raw foods over baby food, ingredients, or odd variants.
 - Prefer a typical whole-food serving (medium fruit, large egg, slice of pizza) over a 2–20 g garnish slice, juice fl oz, or "topping from" row unless the user said slice/oz of that item.
-- If no hit is the same food (banana chips are not a banana; a pepper is not a banana pepper), pick null. Do not invent a USDA row.`
+- Near-misses are not a match: banana chips are not a banana; a pepper is not a banana pepper; almond milk is not dairy milk. Pick null rather than the wrong row.
+- Do not invent a USDA row.`
 
 export const PICK_PREFIX = '{"pick":'
+export const PICK_NONE_LINE = 'N. None. no matching USDA row'
+export const PICK_USER_TAIL =
+  'Pick the letter of the same food. If none of the hits is that food, pick null. Do not invent a USDA row. Do not output grams or calories.'
 
 export function extractUserPrompt(meal: string): string {
   return `Extract foods and household units from this meal. Do not convert units or invent calories.\n${meal}`
@@ -78,8 +84,8 @@ export function pickUserPrompt(opts: {
     `Item: ${opts.item.query}${brand}${portion ? `, about ${portion}` : ''}`,
     'Database hits (USDA reference + convert_portion for this item):',
     ...opts.lines,
-    'None. no match',
-    'Pick the closest nutrition reference letter. Keep the user name, brand, and portion. Do not output grams or calories.',
+    PICK_NONE_LINE,
+    PICK_USER_TAIL,
   ].join('\n')
 }
 
@@ -255,7 +261,7 @@ function letterIndex(value: unknown, hitCount: number): number | null {
   if (value == null) return null
   if (typeof value === 'number' && value >= 0 && value < hitCount) return value
   const s = String(value).trim()
-  if (!s || /^(none|null|no)$/i.test(s)) return null
+  if (!s || /^(none|null|no|n)$/i.test(s)) return null
   if (/^\d+$/.test(s)) {
     const n = Number(s)
     if (n >= 0 && n < hitCount) return n

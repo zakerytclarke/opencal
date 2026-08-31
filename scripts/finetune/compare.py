@@ -212,6 +212,16 @@ def main() -> None:
             f"Refuse when the true USDA row is missing: {none_ok}/{none_n}.",
             "Calories are never taken from the model; pick-null leaves the diary unmatched (0 kcal).",
         ]
+    cite_after = ROOT / "evals/data/finetune/preds/finetuned/cite.json"
+    if cite_after.exists():
+        cites = load(cite_after)
+        ok = sum(1 for r in cites if r.get("ok"))
+        lines += [
+            "",
+            "## Citation / refuse (coach)",
+            "",
+            f"Held-out `evals/splits/cite.json`: {ok}/{len(cites)} cite USDA/convert_portion or refuse without a row.",
+        ]
     Path(args.out).write_text("\n".join(lines) + "\n")
     if coach_b and coach_a:
         Path(args.out.replace(".md", "-coach.json")).write_text(
