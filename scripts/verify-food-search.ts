@@ -254,9 +254,82 @@ const cases: Case[] = [
     run() {
       const hits = searchFoods('banana', 6)
       const top = hits[0]?.name ?? ''
+      const kcal = hits[0] ? Math.round(hits[0].kcal * (hits[0].serveG / 100)) : 0
       return {
-        pass: /banana/i.test(top) && !/pepper/i.test(top) && hits.slice(0, 3).every((h) => !/pepper/i.test(h.name)),
-        got: topNames(hits),
+        pass:
+          /banana/i.test(top) &&
+          !/pepper/i.test(top) &&
+          hits.slice(0, 3).every((h) => !/pepper/i.test(h.name)) &&
+          (hits[0]?.serveG ?? 0) >= 80 &&
+          kcal >= 70 &&
+          kcal <= 140,
+        got: `${topNames(hits)} · ${hits[0]?.serveG}g · ${kcal} kcal`,
+      }
+    },
+  },
+  {
+    name: 'Carrot is a vegetable, not a 5 g garnish slice',
+    run() {
+      const hits = searchFoods('carrot', 6)
+      const top = hits[0]
+      const kcal = top ? Math.round(top.kcal * (top.serveG / 100)) : 0
+      return {
+        pass: Boolean(
+          top &&
+            /carrot/i.test(top.name) &&
+            top.serveG >= 40 &&
+            kcal >= 15 &&
+            kcal <= 80 &&
+            !/juice|dehydrated|salad|peas/i.test(top.name),
+        ),
+        got: `${top?.name} · ${top?.serveG}g · ${kcal} kcal`,
+      }
+    },
+  },
+  {
+    name: '1 medium banana stays ~100 kcal even if USDA row is a 6 g slice',
+    run() {
+      const food = searchFoods('banana', 12).find((f) => /banana, raw/i.test(f.name) && f.serveG < 20)
+      if (!food) return { pass: false, got: 'no garnish banana row' }
+      const medium = entryFromFood(food, item('banana', { quantity: 1, unit: 'medium' }), 'photo', '2026-08-30')
+      const pickedSlice = entryFromFood(food, item('banana', { quantity: 1, unit: 'slice' }), 'photo', '2026-08-30')
+      const pass =
+        medium.kcal >= 90 &&
+        medium.kcal <= 130 &&
+        medium.grams >= 80 &&
+        pickedSlice.kcal >= 90 &&
+        pickedSlice.kcal <= 130
+      return {
+        pass,
+        got: `row ${food.serveG}g · medium ${medium.grams}g ${medium.kcal} kcal · picked-slice ${pickedSlice.grams}g ${pickedSlice.kcal} kcal`,
+      }
+    },
+  },
+  {
+    name: '1 medium carrot is a vegetable, not dehydrated chips',
+    run() {
+      const food = searchFoods('carrot', 6)[0]
+      if (!food) return { pass: false, got: 'no carrot' }
+      const entry = entryFromFood(food, item('carrot', { quantity: 1, unit: 'medium' }), 'search', '2026-08-30')
+      return {
+        pass:
+          /carrot/i.test(food.name) &&
+          !/dehydrated|juice|salad/i.test(food.name) &&
+          entry.kcal >= 15 &&
+          entry.kcal <= 80 &&
+          entry.grams >= 40,
+        got: `${food.name} → ${entry.grams}g ${entry.kcal} kcal`,
+      }
+    },
+  },
+  {
+    name: 'Tomato has real calories, not a 0 kcal foundation stub',
+    run() {
+      const hits = searchFoods('tomato', 6)
+      const top = hits[0]
+      return {
+        pass: Boolean(top && /tomato/i.test(top.name) && top.kcal >= 10 && (top.serveG >= 80 || /medium|small|large/i.test(top.serveLabel))),
+        got: `${top?.name} · ${top?.kcal} kcal/100g · ${top?.serveG}g`,
       }
     },
   },

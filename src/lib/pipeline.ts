@@ -73,7 +73,15 @@ async function matchOne(
   const food =
     picked.decision.index != null ? rows[picked.decision.index]?.food ?? null : null
   const quantity = picked.decision.quantity || item.quantity
-  const unit = picked.decision.unit ?? item.unit
+  const pickedUnit = picked.decision.unit
+  const extractedUnit = item.unit
+  const unit =
+    extractedUnit &&
+    /^(medium|large|small|extra large|whole)$/i.test(extractedUnit) &&
+    pickedUnit &&
+    /^(slice|slices|piece|pieces)$/i.test(pickedUnit)
+      ? extractedUnit
+      : (pickedUnit ?? extractedUnit)
   const resolved: ExtractedItem = {
     ...item,
     quantity,

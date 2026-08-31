@@ -76,24 +76,88 @@ function wordBoundaryHas(hay: string, needle: string): boolean {
   return re.test(hay)
 }
 
+/** Foods that people actually eat as a labeled slice/piece. */
+const SLICE_IS_A_SERVING =
+  /pizza|bread|toast|bagel|muffin|cake|pie|taco|sandwich|bacon|ham|sausage|cheese|steak|loaf|waffle|pancake/
+
+function askedSmallUnit(q: string): boolean {
+  return /\b(slice|slices|piece|pieces|fl oz|tbsp|tsp|oz|g|gram|ml)\b/.test(q)
+}
+
+function garnishSlice(food: Food, q: string): boolean {
+  if (askedSmallUnit(q) || food.serveG >= 30) return false
+  if (!/slice|piece|chunk/.test(normalize(food.serveLabel))) return false
+  return !SLICE_IS_A_SERVING.test(`${normalize(food.name)} ${q}`)
+}
+
+const BARE_PRODUCE =
+  /^(banana|bananas|apple|apples|carrot|carrots|tomato|tomatoes|orange|oranges|onion|onions|cucumber|cucumbers)$/
+
+function isBareProduceName(name: string): boolean {
+  const first = normalize(name.split(',')[0] ?? '')
+  return BARE_PRODUCE.test(first)
+}
+
+/** FNDDS often stores produce as a 2–20 g garnish slice. */
+function isProduceGarnishRow(food: Food): boolean {
+  if (food.serveG >= 30) return false
+  if (!/slice|piece|chunk/.test(normalize(food.serveLabel))) return false
+  if (SLICE_IS_A_SERVING.test(normalize(food.name))) return false
+  return isBareProduceName(food.name)
+}
+
+function userAskedSmallBit(item: ExtractedItem): boolean {
+  return askedSmallUnit([item.raw, item.query].filter(Boolean).join(' '))
+}
+
 function rank(query: string, food: Food, miniScore: number): number {
   const q = normalize(query)
   const name = normalize(food.name)
   const first = name.split(',')[0]?.trim() ?? name
   const aliases = food.aliases.map(normalize)
-  let score = miniScore * 0.2
-  if (name === q || aliases.includes(q)) score += 160
+  const label = normalize(food.serveLabel)
+  let score = Math.min(40, miniScore * 0.2)
+  if (name === q) score += 168
+  else if (aliases.includes(q) && name === first && !garnishSlice(food, q)) score += 160
+  else if (aliases.includes(q) && /dehydrated|juice|chips|powder|nectar/.test(name)) score += 12
+  else if (aliases.includes(q)) score += 110
   else if (first === q) score += 120
   else if (name.startsWith(`${q} `) || name.startsWith(`${q},`) || aliases.some((a) => a.startsWith(q))) score += 55
   else if (wordBoundaryHas(name, q) || aliases.some((a) => wordBoundaryHas(a, q))) score += 20
   score -= Math.min(36, Math.max(0, name.length - q.length) * 0.28)
   if (/baby ?food|baby toddler|\binfant\b/.test(name)) score -= 90
-  if (/as ingredient|for use (on|with)/.test(name)) score -= 22
+  if (/as ingredient|for use (on|with)|topping from/.test(name)) score -= 40
   if (/,?\s*dry\b|dry mix|artificially flavored/.test(name) && !/\bmix\b/.test(q)) score -= 40
+  if (food.kcal < 1) score -= 80
+  if (garnishSlice(food, q) || isProduceGarnishRow(food)) score -= 80
+  if (!askedSmallUnit(q) && food.serveG < 20 && !SLICE_IS_A_SERVING.test(name)) score -= 45
+  if (!askedSmallUnit(q) && food.serveG >= 70 && food.serveG <= 220 && /medium|small|large|peeled|extra small/.test(label)) {
+    score += 32
+  }
   if ((q === 'egg' || q === 'eggs') && /white|yolk|noodle|bread|bagel|foo yung|roll/.test(name)) score -= 50
   if ((q === 'egg' || q === 'eggs') && /whole|scrambled/.test(name)) score += 22
+  if (/egg white/.test(q) && /sandwich/.test(name)) score -= 60
   if ((q === 'banana' || q === 'bananas') && /pepper/.test(name)) score -= 60
-  if ((q === 'banana' || q === 'bananas') && /\braw\b/.test(name)) score += 18
+  if ((q === 'banana' || q === 'bananas') && /\braw\b/.test(name) && food.serveG >= 70) score += 18
+  if (BARE_PRODUCE.test(q)) {
+    if (
+      /juice|nectar|chips|split|pudding|dehydrated|powder|candied|dried|pie|cider|glazed|pickled|puree|paste|sauce|filling/.test(
+        name,
+      )
+    ) {
+      score -= 280
+    }
+    if (/muffin|cake|cupcake|bread/.test(name)) score -= 80
+    if (/salad/.test(name) && !/salad/.test(q)) score -= 110
+    if (/peas and carrots|beef|soup|stew|mixed/.test(name) && !/peas|soup|stew|mixed/.test(q)) score -= 90
+    if (isBareProduceName(food.name) && food.kcal >= 10 && food.serveG >= 40) score += 70
+    if (/\braw\b/.test(name) && food.serveG >= 40 && food.kcal >= 10) score += 48
+    if (/frozen, unprepared/.test(name) && food.serveG >= 40 && food.kcal >= 10) score += 55
+    else if (/\bcanned\b/.test(name) && food.serveG >= 40 && food.kcal >= 10) score += 30
+  }
+  const qStem = q.endsWith('s') && q.length > 4 ? q.slice(0, -1) : q
+  const firstStem = first.endsWith('s') && first.length > 4 ? first.slice(0, -1) : first
+  if (qStem.length >= 4 && firstStem === qStem && first !== q && name !== q) score += 36
   const flavorAsked =
     /\b(chocolate|vanilla|strawberry|blueberry|mango|peach|pumpkin|coconut|apricot|pineapple)\b/.test(q)
   if (!flavorAsked) {
@@ -110,6 +174,7 @@ function rank(query: string, food: Food, miniScore: number): number {
     const covered = words.filter((w) => name.includes(w) || aliases.some((a) => a.includes(w))).length
     if (covered === words.length) score += 52
     else if (covered === words.length - 1) score += 16
+    else score -= 48
   }
   if (/\bturkey\b/.test(q) && !/\bturkey\b/.test(name) && !aliases.some((a) => /\bturkey\b/.test(a))) score -= 70
   if (/\bbacon\b/.test(q) && !/\bturkey\b/.test(q) && /\bturkey\b/.test(name)) score -= 28
@@ -131,18 +196,32 @@ function rank(query: string, food: Food, miniScore: number): number {
 
 export function searchFoods(query: string, limit = 20): Food[] {
   if (!search || !query.trim()) return []
-  const hits = search.search(query.trim(), { combineWith: 'AND' })
-  const fallback = hits.length ? hits : search.search(query.trim(), { combineWith: 'OR', fuzzy: 0.2 })
-  const seen = new Set<string>()
-  const ranked = fallback
-    .map((h) => {
-      const food = byId.get(String(h.id))
+  const q = query.trim()
+  const n = normalize(q)
+  const variants = new Set([q, n])
+  if (n.endsWith('s') && n.length > 4) variants.add(n.slice(0, -1))
+  else if (n.length > 3) variants.add(`${n}s`)
+  const merged: { id: unknown; score: number }[] = []
+  for (const v of variants) {
+    if (!v) continue
+    merged.push(...search.search(v, { combineWith: 'AND' }))
+    merged.push(...search.search(v, { combineWith: 'OR', fuzzy: 0.15, prefix: true }))
+  }
+  const bestMini = new Map<string, number>()
+  for (const h of merged) {
+    const id = String(h.id)
+    bestMini.set(id, Math.max(bestMini.get(id) ?? 0, h.score))
+  }
+  const ranked = [...bestMini.entries()]
+    .map(([id, mini]) => {
+      const food = byId.get(id)
       if (!food) return null
-      return { food, score: rank(query, food, h.score) }
+      return { food, score: rank(query, food, mini) }
     })
     .filter((x): x is { food: Food; score: number } => !!x)
     .sort((a, b) => b.score - a.score)
   const out: Food[] = []
+  const seen = new Set<string>()
   for (const row of ranked) {
     if (seen.has(row.food.id)) continue
     seen.add(row.food.id)
@@ -189,8 +268,35 @@ const UNIT_GRAMS: Record<string, number> = {
   liter: 1000,
 }
 
+/** Whole produce counted as 1 medium, not a 6 g FNDDS garnish slice. */
+function wholeItemGrams(food: Food): number {
+  const name = normalize(food.name)
+  if (/banana/.test(name) && !/chip|split|nectar|pudding|pepper/.test(name)) return 118
+  if (/^apples?\b/.test(name) && !/juice|sauce|dried|pie|candied/.test(name)) return 165
+  if (/^oranges?\b/.test(name) && !/juice|peel/.test(name)) return 130
+  if (/^tomatoes?\b/.test(name) && !/juice|sauce|paste|puree|soup/.test(name)) return 120
+  if (/^carrots?\b/.test(name) && !/juice|dehydrated/.test(name)) return 61
+  if (/^onions?\b/.test(name)) return 110
+  if (/^cucumbers?\b/.test(name)) return 150
+  return Math.max(80, food.serveG * 12)
+}
+
 function gramsFor(food: Food, item: ExtractedItem): number {
   const unit = item.unit
+  const garnish =
+    isProduceGarnishRow(food) && !userAskedSmallBit(item)
+      ? true
+      : garnishSlice(food, [item.query, item.unit, item.raw].filter(Boolean).join(' '))
+  if (
+    garnish &&
+    (!unit ||
+      ['small', 'medium', 'large', 'extra large', 'each', 'item', 'items', 'slice', 'slices', 'piece', 'pieces', 'whole'].includes(
+        unit,
+      ))
+  ) {
+    const factor = unit === 'small' ? 0.75 : unit === 'large' || unit === 'extra large' ? 1.25 : 1
+    return wholeItemGrams(food) * item.quantity * factor
+  }
   if (!unit) {
     return food.serveG * item.quantity
   }

@@ -54,7 +54,9 @@ Rules:
 - quantity is how many of THAT serving the user ate, not grams.
   Example: user ate 2 large eggs, row serving is 1 large → quantity 2.
   Example: user ate half a cup, row serving is 1 cup → quantity 0.5.
-- Prefer everyday cooked/raw foods over baby food, ingredients, or odd variants.`
+- Prefer everyday cooked/raw foods over baby food, ingredients, or odd variants.
+- Prefer a typical whole-food serving (medium fruit, large egg, slice of pizza) over a 2–20 g garnish slice, juice fl oz, or "topping from" row unless the user said slice/oz of that item.
+- Match the user's unit: medium banana → ~100 g fruit, not a 6 g slice.`
 
 export const PICK_PREFIX = '{"pick":'
 
