@@ -2,7 +2,7 @@ import { extractFoods, isQuickCalorie, refineExtracted } from './extract'
 import { bestMatch, candidateLines, entryFromFood, quickAddEntry, searchForItem, unmatchedEntry } from './foods'
 import { uid } from './storage'
 import { extractMealPhoto, extractMealText, pickFoodMatch } from './vlm'
-import type { DebugPath, ExtractedItem, LogEntry } from '../types'
+import type { DebugPath, ExtractedItem, Food, LogEntry } from '../types'
 
 export type JobProgress = {
   message: string
@@ -34,6 +34,22 @@ function stamp(entry: LogEntry, meta: {
     debugError: meta.error,
     debugMs: meta.ms,
   }
+}
+
+function preferReference(item: ExtractedItem, picked: Food | null, hits: Food[]): Food | null {
+  const brand = item.brand?.trim().toLowerCase()
+  const hay = `${item.query} ${item.unit ?? ''}`.toLowerCase()
+  let food = picked ?? hits[0] ?? null
+  if (brand && food && !food.name.toLowerCase().includes(brand)) {
+    food = hits.find((h) => h.name.toLowerCase().includes(brand)) ?? food
+  }
+  if (/\bgrande\b/.test(hay)) {
+    const grande = hits.find(
+      (h) => /grande/i.test(h.name) && (!brand || h.name.toLowerCase().includes(brand)),
+    )
+    if (grande) food = grande
+  }
+  return food
 }
 
 async function matchOne(
@@ -70,8 +86,9 @@ async function matchOne(
     item,
     rows.map((r) => r.line),
   )
-  const food =
+  const pickedFood =
     picked.decision.index != null ? rows[picked.decision.index]?.food ?? null : null
+  const food = preferReference(item, pickedFood, hits)
   const resolved: ExtractedItem = {
     ...item,
     quantity: item.quantity,
