@@ -84,7 +84,7 @@
       "kcalPer100g": 130
     },
     "tomato": {
-      "aliases": ["tomato"],
+      "aliases": ["tomato", "tomatoes", "cherry tomato", "cherry tomatoes"],
       "query": "tomato",
       "quantity": 1,
       "unit": "medium",

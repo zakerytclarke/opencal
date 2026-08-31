@@ -267,6 +267,26 @@ function sameFood(a: string, b: string): boolean {
   return shorter.every((t) => longer.includes(t))
 }
 
+function kindBarFromMeal(item: ExtractedItem, meal: string): ExtractedItem {
+  const q = item.query.toLowerCase()
+  if (/^kind$/i.test(item.unit || '')) {
+    return {
+      ...item,
+      query: q.includes('kind') ? q : 'kind bar',
+      unit: 'bar',
+      brand: item.brand || 'KIND',
+    }
+  }
+  if (/\bkind\b/i.test(meal) && /\bbar\b/i.test(q)) {
+    return {
+      ...item,
+      query: q.includes('kind') ? item.query : 'kind bar',
+      brand: item.brand || 'KIND',
+    }
+  }
+  return item
+}
+
 function stripGuessedSize(item: ExtractedItem, meal: string): ExtractedItem {
   if (!item.unit || !/^(small|medium|large|extra large)$/i.test(item.unit)) return item
   if (/^eggs?$/i.test(item.query) && item.unit === 'large' && !/\bwhite/i.test(meal)) return item
@@ -295,7 +315,7 @@ export function refineExtracted(items: ExtractedItem[], meal: string): Extracted
       if (/\bgrande\b/i.test(meal) && (!next.unit || /^(cup|cups|glass|glasses)$/i.test(next.unit))) {
         next = { ...next, unit: 'grande' }
       }
-      next = stripGuessedSize({ ...next, brand: brandFromMeal(meal, next) }, meal)
+      next = kindBarFromMeal(stripGuessedSize({ ...next, brand: brandFromMeal(meal, next) }, meal), meal)
       return next
     })
   for (const r of regex) {

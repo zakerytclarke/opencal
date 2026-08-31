@@ -25,6 +25,7 @@ Split a mixed bowl into the foods you can see (tofu, eggs, corn, …), not one g
 name is a short grocery name. brand is a readable package or logo, else null.
 quantity is how many pieces or servings you see. unit is the household word: medium, large, small, slice, cup, tbsp, oz, piece, bar.
 The host maps name and brand to a USDA row, then convert_portion converts quantity and unit. Do not estimate grams or calories or pick a catalog letter.
+A whole apple, orange, banana, or tomato is quantity 1 unit medium (or large), not oz. Count pieces of produce; use oz/g only when the food is a shredded pile or a weighed scoop.
 Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not invent sides that are not in the photo."""
 
 PHOTO_EXTRACT_USER = "What foods are in this photo? Count items and name household units. Do not estimate grams or calories."

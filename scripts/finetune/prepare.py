@@ -1085,6 +1085,61 @@ def grams_item(name: str, grams: float, rng: random.Random) -> dict:
     return item_from(name, qty, "g")
 
 
+N5K_HOUSEHOLD = {
+    "apple": ("apple", 1, "medium", 80, 220),
+    "banana": ("banana", 1, "medium", 80, 160),
+    "carrot": ("carrot", 1, "medium", 30, 120),
+    "cucumber": ("cucumber", 1, "medium", 50, 250),
+    "egg": ("eggs", 2, "large", 80, 200),
+    "onion": ("onion", 1, "medium", 40, 180),
+    "orange": ("orange", 1, "medium", 80, 220),
+    "pasta": ("pasta", 1, "cup", 80, 280),
+    "pizza": ("pizza", 2, "slice", 60, 250),
+    "rice": ("rice", 1, "cup", 80, 250),
+    "tomato": ("tomato", 1, "medium", 40, 200),
+    "bread": ("bread", 1, "slice", 20, 80),
+}
+
+N5K_NAME_CLASS = {
+    "apple": "apple",
+    "banana": "banana",
+    "bread": "bread",
+    "toast": "bread",
+    "carrot": "carrot",
+    "carrots": "carrot",
+    "cucumber": "cucumber",
+    "cucumbers": "cucumber",
+    "egg": "egg",
+    "eggs": "egg",
+    "scrambled eggs": "egg",
+    "onion": "onion",
+    "onions": "onion",
+    "orange": "orange",
+    "oranges": "orange",
+    "pasta": "pasta",
+    "spaghetti": "pasta",
+    "pizza": "pizza",
+    "cheese pizza": "pizza",
+    "rice": "rice",
+    "white rice": "rice",
+    "brown rice": "rice",
+    "tomato": "tomato",
+    "tomatoes": "tomato",
+    "cherry tomatoes": "tomato",
+}
+
+
+def n5k_item(name: str, grams: float, rng: random.Random) -> dict:
+    key = re.sub(r"\(raw\)|\(cooked\)", "", name.lower()).strip()
+    cls = N5K_NAME_CLASS.get(key)
+    spec = N5K_HOUSEHOLD.get(cls or "")
+    if spec:
+        query, qty, unit, lo, hi = spec
+        if lo <= float(grams) <= hi:
+            return item_from(query, qty, unit)
+    return grams_item(name, grams, rng)
+
+
 def build_nutrition5k(limit: int, rng: random.Random) -> list[dict]:
     if limit <= 0:
         return []
@@ -1138,7 +1193,7 @@ def build_nutrition5k(limit: int, rng: random.Random) -> list[dict]:
             grams = ing.get("grams") or 0
             if not name or grams < 8:
                 continue
-            foods.append(grams_item(name, grams, rng))
+            foods.append(n5k_item(name, grams, rng))
         if not foods:
             continue
         if not sid:
