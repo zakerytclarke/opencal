@@ -5,7 +5,6 @@ import { loadFoods, quickAddEntry } from './lib/foods'
 import { logFromPhoto, logFromText } from './lib/pipeline'
 import { warmupVlm } from './lib/vlm'
 import { todayKey } from './lib/dates'
-import { speak } from './lib/speech'
 import type { Diary, ExtractedItem, LogEntry, LogJob, PendingFood, Profile } from './types'
 import { Home } from './screens/Home'
 import { Onboarding } from './screens/Onboarding'
@@ -112,9 +111,7 @@ export default function App() {
           payload.kind === 'photo'
             ? await logFromPhoto(payload.file, date, handlers)
             : await logFromText(payload.text, date, payload.source, handlers)
-        const names = entries.map((e) => e.name).slice(0, 3).join(', ')
-        const kcal = entries.reduce((s, e) => s + e.kcal, 0)
-        if (entries.length) speak(`Logged ${names}. ${kcal} calories.`)
+        void entries
         patchJob(id, { status: 'done', step: 'Done', pct: 100, pending: [] })
         window.setTimeout(() => {
           setJobs((list) => {
@@ -136,7 +133,6 @@ export default function App() {
   function quickLog(kcal: number, raw: string) {
     const entry = { ...quickAddEntry(kcal, date), debugInput: raw, debugRaw: '(quick add — model skipped)', debugPath: 'quick' as const }
     addLogged([entry])
-    speak(`Logged ${kcal} calories.`)
   }
 
   function del(id: string) {
@@ -145,7 +141,6 @@ export default function App() {
 
   function instantLog(entry: LogEntry) {
     addLogged([entry])
-    speak(`Logged ${entry.name}. ${Math.round(entry.kcal)} calories.`)
   }
 
   function resetOnboarding() {

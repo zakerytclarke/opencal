@@ -56,12 +56,3 @@ export function listen(opts: {
   rec.start()
   return { stop: () => rec.stop() }
 }
-
-export function speak(text: string): void {
-  if (!('speechSynthesis' in window)) return
-  window.speechSynthesis.cancel()
-  const u = new SpeechSynthesisUtterance(text)
-  u.rate = 1.05
-  u.pitch = 1
-  window.speechSynthesis.speak(u)
-}

@@ -1,6 +1,8 @@
 type Props = {
   goal: number
   consumed: number
+  display: number
+  label: string
   size?: number
   stroke?: number
 }
@@ -12,8 +14,7 @@ function ringColor(ratio: number): string {
   return 'var(--over)'
 }
 
-export function CalorieRing({ goal, consumed, size = 148, stroke = 12 }: Props) {
-  const remaining = goal - consumed
+export function CalorieRing({ goal, consumed, display, label, size = 148, stroke = 12 }: Props) {
   const ratio = consumed / Math.max(goal, 1)
   const r = (size - stroke) / 2
   const c = 2 * Math.PI * r
@@ -37,8 +38,8 @@ export function CalorieRing({ goal, consumed, size = 148, stroke = 12 }: Props) 
         />
       </svg>
       <div className="ring-center">
-        <div className="ring-number">{Math.round(remaining).toLocaleString()}</div>
-        <div className="ring-label">{remaining >= 0 ? 'Remaining' : 'Over'}</div>
+        <div className="ring-number">{Math.round(display).toLocaleString()}</div>
+        <div className="ring-label">{label}</div>
       </div>
     </div>
   )

@@ -160,8 +160,15 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 .card {
   background: var(--card); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 14px;
 }
-.calorie-card { display: flex; align-items: center; gap: 16px; }
-.calorie-side { display: grid; gap: 10px; flex: 1; }
+.calorie-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  padding: 16px 18px 14px;
+}
+.calorie-hero {
+  border: 0; background: transparent; padding: 0; display: grid; justify-items: center; gap: 6px;
+}
+.ring-meta { color: var(--mute); font-size: 13px; font-weight: 650; }
+.ring-meta .stat b { display: inline; font-size: 13px; color: var(--hero); }
 .stat b { display: block; font-size: 22px; color: var(--hero); }
 .stat span { color: var(--mute); font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 
@@ -170,14 +177,21 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 .ring-number { font-size: 32px; font-weight: 800; letter-spacing: -0.04em; color: var(--hero); line-height: 1; }
 .ring-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--slate); }
 
-.macros { display: grid; gap: 12px; }
-.macro-top { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; }
-.macro-label { text-transform: uppercase; letter-spacing: 0.06em; color: var(--slate); font-size: 11px; }
-.macro-track { height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-top: 6px; }
-.macro-fill { height: 100%; border-radius: inherit; }
-.macro-fill.is-carbs { background: var(--carbs); }
-.macro-fill.is-fat { background: var(--fat); }
-.macro-fill.is-protein { background: var(--protein); }
+.vbars { display: flex; gap: 12px; align-self: stretch; padding: 4px 4px 0; }
+.vbar { display: grid; grid-template-rows: 1fr auto auto; justify-items: center; gap: 4px; min-height: 148px; }
+.vbar-track {
+  width: 11px; height: 100%; background: var(--surface-2); border-radius: 99px; overflow: hidden;
+  display: flex; align-items: flex-end;
+}
+.vbar-fill { width: 100%; border-radius: inherit; min-height: 2px; }
+.vbar-fill.is-carbs { background: var(--carbs); }
+.vbar-fill.is-fat { background: var(--fat); }
+.vbar-fill.is-protein { background: var(--protein); }
+.vbar-letter { font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+.vbar-letter.is-carbs { color: var(--carbs); }
+.vbar-letter.is-fat { color: var(--fat); }
+.vbar-letter.is-protein { color: var(--protein); }
+.vbar-g { font-size: 11px; font-weight: 700; color: var(--hero); font-variant-numeric: tabular-nums; }
 
 .foods-card { padding: 8px 8px 12px; }
 .foods-head { padding: 8px 8px 4px; }

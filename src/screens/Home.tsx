@@ -6,12 +6,10 @@ import { FoodBatchCard } from '../components/FoodBatch'
 import { LogJobCard } from '../components/LogJobCard'
 import { SettingsSheet } from '../components/SettingsSheet'
 import { VlmStatusBar } from '../components/VlmStatus'
-import { CalorieRing } from '../components/CalorieRing'
-import { MacroBars } from '../components/MacroBars'
+import { NutritionCard } from '../components/NutritionCard'
 import { groupBatches } from '../lib/batches'
 import { loggedDays, totals } from '../lib/diary'
 import { foodCount } from '../lib/foods'
-import { kgToLb } from '../lib/plan'
 import type { Diary, LogJob, Profile } from '../types'
 
 type Props = {
@@ -50,10 +48,6 @@ export function Home({
   const t = totals(entries)
   const logged = loggedDays(diary)
   const dayJobs = jobs.filter((j) => j.date === date)
-  const weightLabel =
-    profile.units === 'imperial'
-      ? `${Math.round(kgToLb(profile.weightKg))} lb`
-      : `${Math.round(profile.weightKg)} kg`
 
   return (
     <div className="home">
@@ -78,34 +72,16 @@ export function Home({
 
       <DateNav date={date} onDate={onDate} onOpenCalendar={() => setCalendar(true)} />
 
-      <section className="card calorie-card">
-        <CalorieRing goal={profile.calorieGoal} consumed={t.kcal} />
-        <div className="calorie-side">
-          <div className="stat">
-            <b>{Math.round(t.kcal).toLocaleString()}</b>
-            <span>Eaten</span>
-          </div>
-          <div className="stat">
-            <b>{profile.calorieGoal.toLocaleString()}</b>
-            <span>Goal</span>
-          </div>
-          <div className="stat">
-            <b>{weightLabel}</b>
-            <span>Weight</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="card">
-        <MacroBars
-          carbs={t.carbs}
-          carbsGoal={profile.carbsGoal}
-          fat={t.fat}
-          fatGoal={profile.fatGoal}
-          protein={t.protein}
-          proteinGoal={profile.proteinGoal}
-        />
-      </section>
+      <NutritionCard
+        kcal={t.kcal}
+        goal={profile.calorieGoal}
+        carbs={t.carbs}
+        carbsGoal={profile.carbsGoal}
+        fat={t.fat}
+        fatGoal={profile.fatGoal}
+        protein={t.protein}
+        proteinGoal={profile.proteinGoal}
+      />
 
       <section className="card foods-card">
         <div className="foods-head">

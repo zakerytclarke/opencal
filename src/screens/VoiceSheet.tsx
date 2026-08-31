@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { extractFoods } from '../lib/extract'
 import { resolveExtracted } from '../lib/foods'
-import { canListen, listen, speak, type SpeechHandle } from '../lib/speech'
+import { canListen, listen, type SpeechHandle } from '../lib/speech'
 import type { LogEntry } from '../types'
 
 type Props = {
@@ -39,8 +39,6 @@ export function VoiceSheet({ date, onClose, onLog, onFallbackSearch }: Props) {
   function confirm() {
     if (!preview.length) return
     onLog(preview)
-    const cals = preview.reduce((s, e) => s + e.kcal, 0)
-    speak(`Logged ${preview.map((e) => e.name).join(', ')}. ${cals} calories.`)
     onClose()
   }
 
