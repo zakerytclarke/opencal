@@ -12,7 +12,7 @@ import { setupLocalFoods } from './setup.ts'
 import { refineExtracted } from '../../src/lib/extract.ts'
 import { caseNutrition, goldMealNutrition, imageExpect } from './gold.ts'
 import { formatSummary, goldFields, nutritionFromEntries, predFields, scoreCase, summarize } from './metrics.ts'
-import { entryFromFood, mapToBaseFood, sanitizePhotoItem } from '../../src/lib/foods.ts'
+import { catalogHitsFor, entryFromFood, mapToBaseFood, photoCatalog, sanitizePhotoItem } from '../../src/lib/foods.ts'
 import type { ExtractedItem } from '../../src/types.ts'
 import type { CaseScore, MetricSummary, TextSplitFile } from './types.ts'
 import { imageCaseIndex, loadAllImageSplits } from './image-splits.ts'
@@ -91,10 +91,11 @@ for (const row of extracts) {
     if (!gold) continue
     const items = toItems(row)
     const goldItems = imageExpect(gold)
+    const catalog = photoCatalog(items)
     const entries = items
       .filter((i) => i.query)
       .map((item) => {
-        const mapped = mapToBaseFood(item, '(photo)')
+        const mapped = mapToBaseFood(item, '(photo)', catalogHitsFor(item, catalog))
         if (!mapped) return null
         const portioned = sanitizePhotoItem(item, mapped.food, items.length)
         return entryFromFood(mapped.food, portioned, 'photo', '1970-01-01')

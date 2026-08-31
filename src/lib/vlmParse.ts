@@ -51,22 +51,20 @@ Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not i
 export const PHOTO_EXTRACT_USER =
   'Name every food in this photo. Names and brands only. No quantity, grams, or calories. JSON only.'
 
-export const PHOTO_PORTION_SYSTEM = `You estimate how much of each visible food is on the plate.
-The host already named the foods and looked up USDA rows. Each catalog line is a household serving and its grams — use that as a visual ruler.
+export const PHOTO_PORTION_SYSTEM = `You match each visible food to a USDA catalog record, then say how many of that record's household serving are on the plate.
+The host already named the foods and looked up food-database rows. Each line is one record: food name, household serving, grams.
 Reply with JSON only:
-{"foods":[{"name":"carrot","brand":null,"quantity":40,"unit":"g"},{"name":"chicken","brand":null,"quantity":0.5,"unit":"cup"}]}
+{"foods":[{"name":"apple","brand":null,"quantity":1,"unit":"medium"},{"name":"olive oil","brand":null,"quantity":1,"unit":"tbsp"},{"name":"rice","brand":null,"quantity":0.5,"unit":"cup"}]}
 Rules:
-- One object per visible food. Keep the grocery name; copy brand from a package if you see one.
-- quantity is a number. unit is g, oz, cup, tbsp, tsp, slice, medium, large, small, piece, serving, or bar.
-- Prefer grams when the pile is a scoop, shred, or mixed bowl. Use 1 medium / 1 large / 1 slice for a whole fruit, egg, or pizza slice that matches the USDA serving size.
-- A whole apple, banana, orange, or egg is never 7 g. Emit 1 medium or 1 large.
-- Oil and dressing are 1 tsp or 1 tbsp (a drizzle), never cups and never 4 tablespoons.
-- A handful of almonds is not 12 servings. Compare the pile to the listed USDA grams.
-- Do not invent calories or pick a catalog letter. convert_portion on the host turns quantity and unit into grams and macros.
+- One object per visible food. name identifies the same food as a catalog record. brand is a package or logo, else null.
+- Copy the household unit from the catalog record you matched (medium, large, tbsp, cup, slice). quantity is how many of that serving you see (1, 0.5, 2).
+- A whole fruit or egg uses that record's medium/large serving, never 7 g. Oil uses 1 tsp or 1 tbsp from the oil record.
+- Only use grams if nothing on the list is a household serving for that pile.
+- Do not pick a letter. Do not invent calories. The host finds the same catalog record from your name, quantity, and unit, then convert_portion computes grams and macros.
 - Skip plates and utensils.`
 
 export const PHOTO_PORTION_USER_TAIL =
-  'Look at the photo. For every visible food emit name, brand, quantity, and unit. Prefer grams or a fraction of the listed USDA serving. Do not invent calories. JSON only.'
+  'Look at the photo. For every visible food match a catalog record and emit name, brand, quantity, and that record\'s household unit. Do not pick a letter or invent calories. JSON only.'
 
 export const PICK_SYSTEM = `You pick a local USDA nutrition reference row.
 Calories and grams are already computed by convert_portion from USDA per-100 g values and household weights. Do not invent numbers or change the portion.
@@ -96,7 +94,7 @@ export function photoPortionUser(names: string[], lines: string[]): string {
   const visible = names.filter(Boolean).join(', ') || 'see photo'
   return [
     `Visible foods: ${visible}`,
-    'USDA catalog (household serving and grams — visual ruler, not a calorie guess):',
+    'Food database records (match one per food; copy its household unit; host will convert_portion):',
     ...(lines.length ? lines : ['(no USDA rows)']),
     PHOTO_PORTION_USER_TAIL,
   ].join('\n')

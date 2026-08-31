@@ -445,28 +445,64 @@ function photoHits(item: ExtractedItem, hitsPerFood: number): Food[] {
   return hits.slice(0, hitsPerFood)
 }
 
-/** USDA household servings for the photo portion step (visual ruler, not convert_portion). */
-export function photoCatalogLines(items: ExtractedItem[], hitsPerFood = 3): { names: string[]; lines: string[] } {
-  const names = items.map((i) => i.query).filter(Boolean)
+function catalogRecordLine(food: Food, query: string): string {
+  const oil = /\boil\b/.test(normalize(query)) || /\boil\b/.test(normalize(food.name))
+  if (oil) return `${food.name} · 1 tbsp (${Math.round(oilTbspGrams(food))} g)`
+  return `${food.name} · ${food.serveLabel} (${Math.round(food.serveG)} g)`
+}
+
+export type PhotoCatalogEntry = {
+  query: string
+  foods: Food[]
+  line: string
+}
+
+export type PhotoCatalog = {
+  names: string[]
+  lines: string[]
+  entries: PhotoCatalogEntry[]
+}
+
+/** Food-db records shown to the photo portion step. No letters — the model copies name + household unit. */
+export function photoCatalog(items: ExtractedItem[], hitsPerFood = 3): PhotoCatalog {
+  const names: string[] = []
   const lines: string[] = []
+  const entries: PhotoCatalogEntry[] = []
   for (const item of items) {
     if (!item.query) continue
-    const hits = photoHits(item, hitsPerFood)
-    if (!hits.length) {
-      lines.push(`- ${item.query}: (no USDA row)`)
+    names.push(item.query)
+    const foods = photoHits(item, hitsPerFood)
+    if (!foods.length) {
+      const line = `- ${item.query}: (no food-db record)`
+      lines.push(line)
+      entries.push({ query: item.query, foods: [], line })
       continue
     }
-    const bits = hits.map((food, i) => {
-      const letter = String.fromCharCode(65 + i)
-      const oil = /\boil\b/.test(normalize(item.query)) || /\boil\b/.test(normalize(food.name))
-      if (oil) {
-        return `${letter}. ${food.name} · USDA 1 tbsp (${Math.round(oilTbspGrams(food))} g)`
-      }
-      return `${letter}. ${food.name} · USDA ${food.serveLabel} (${Math.round(food.serveG)} g)`
-    })
-    lines.push(`- ${item.query}: ${bits.join(' | ')}`)
+    const line = `- ${item.query}: ${foods.map((food) => catalogRecordLine(food, item.query)).join('; ')}`
+    lines.push(line)
+    entries.push({ query: item.query, foods, line })
   }
-  return { names, lines }
+  return { names, lines, entries }
+}
+
+/** USDA household servings for the photo portion step (visual ruler, not convert_portion). */
+export function photoCatalogLines(items: ExtractedItem[], hitsPerFood = 3): { names: string[]; lines: string[] } {
+  const catalog = photoCatalog(items, hitsPerFood)
+  return { names: catalog.names, lines: catalog.lines }
+}
+
+export function catalogHitsFor(item: ExtractedItem, catalog: PhotoCatalog | null | undefined): Food[] | undefined {
+  if (!catalog?.entries.length) return undefined
+  const q = normalize(item.query)
+  const exact = catalog.entries.find((e) => normalize(e.query) === q)
+  if (exact?.foods.length) return exact.foods
+  const loose = catalog.entries.find((e) => {
+    const k = normalize(e.query)
+    return Boolean(q && k && (q.includes(k) || k.includes(q)))
+  })
+  if (loose?.foods.length) return loose.foods
+  const fitted = catalog.entries.flatMap((e) => e.foods).filter((food) => referenceFitsItem(item, food))
+  return fitted.length ? fitted : undefined
 }
 
 const PHOTO_WHOLE =
@@ -527,17 +563,41 @@ export type MappedFood = {
   citation: string
 }
 
+const VOLUME_UNITS = new Set(['cup', 'tbsp', 'tsp', 'ml', 'l', 'fl oz'])
+const MASS_UNITS = new Set(['g', 'kg', 'oz', 'lb'])
+
+/** Prefer the catalog record whose household unit matches what the model emitted. */
+function unitAlignScore(item: ExtractedItem, food: Food): number {
+  const unit = canonUnit(item.unit)
+  if (!unit) return 0
+  if (MASS_UNITS.has(unit)) return 0
+  const house = parseHousehold(food.serveLabel)
+  const houseUnit = house ? canonUnit(house.unit) : ''
+  const label = normalize(food.serveLabel)
+  if (houseUnit === unit) return 22
+  if (label.includes(unit)) return 16
+  if (VOLUME_UNITS.has(unit) && houseUnit && VOLUME_UNITS.has(houseUnit)) return 8
+  if (houseUnit && houseUnit !== unit) return -10
+  return 0
+}
+
 /**
- * Host-side USDA map: MiniSearch + brand/grande + near-miss reject.
- * Calories come from convert_portion on the chosen row — the VLM never picks a letter.
+ * Bind name + unit to a food-db record. `catalog` is the photo RAG list when
+ * the model was shown those rows; otherwise MiniSearch. No letter pick.
+ * Calories come from convert_portion on the chosen row.
  */
-export function mapToBaseFood(item: ExtractedItem, meal = ''): MappedFood | null {
-  const hits = searchForItem(item, 8)
+export function mapToBaseFood(item: ExtractedItem, meal = '', catalog?: Food[] | null): MappedFood | null {
+  const fromRag = Boolean(catalog?.length)
+  const hits = (fromRag ? catalog! : searchForItem(item, 8)).slice()
   if (!hits.length) return null
   const preferred = preferReference(item, hits[0] ?? null, hits, meal)
-  const ordered = preferred
-    ? [preferred, ...hits.filter((h) => h.id !== preferred.id)]
-    : hits
+  const ordered = [...hits].sort((a, b) => {
+    const score = (food: Food) =>
+      (preferred && food.id === preferred.id ? 18 : 0) +
+      unitAlignScore(item, food) +
+      (fromRag ? rank(item.query, food, 10) : 0)
+    return score(b) - score(a)
+  })
   for (const food of ordered) {
     if (!referenceFitsItem(item, food)) continue
     const converted = portionFor(food, item)

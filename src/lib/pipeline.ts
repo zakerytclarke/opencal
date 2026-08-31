@@ -1,8 +1,17 @@
 import { extractFoods, isQuickCalorie, refineExtracted } from './extract'
-import { entryFromFood, mapToBaseFood, photoCatalogLines, quickAddEntry, sanitizePhotoItem, unmatchedEntry } from './foods'
+import {
+  catalogHitsFor,
+  entryFromFood,
+  mapToBaseFood,
+  photoCatalog,
+  quickAddEntry,
+  sanitizePhotoItem,
+  unmatchedEntry,
+  type PhotoCatalog,
+} from './foods'
 import { uid } from './storage'
 import { estimatePhotoPortions, extractMealPhoto, extractMealText } from './vlm'
-import type { DebugPath, ExtractedItem, LogEntry } from '../types'
+import type { DebugPath, ExtractedItem, Food, LogEntry } from '../types'
 
 export type JobProgress = {
   message: string
@@ -42,6 +51,7 @@ function matchOne(
   date: string,
   source: LogEntry['source'],
   photoSiblings = 1,
+  catalogFoods?: Food[] | null,
 ): { entry: LogEntry; raw: string; path: DebugPath; error?: string; ms: number } {
   const started = performance.now()
   if (item.caloriesHint && !item.query) {
@@ -60,7 +70,7 @@ function matchOne(
     brand: item.brand ?? null,
     query: item.query,
   }
-  const mapped = mapToBaseFood(resolved, meal)
+  const mapped = mapToBaseFood(resolved, meal, catalogFoods)
   if (!mapped) {
     return {
       entry: unmatchedEntry(resolved, source, date),
@@ -89,6 +99,7 @@ async function resolveItems(
   extractPath: DebugPath,
   extractError: string | undefined,
   handlers: JobHandlers,
+  catalog: PhotoCatalog | null = null,
 ): Promise<LogEntry[]> {
   const entries: LogEntry[] = []
   const n = Math.max(1, items.length)
@@ -96,7 +107,9 @@ async function resolveItems(
     const item = items[i]
     const pct = 28 + Math.round(((i + 0.2) / n) * 68)
     handlers.onProgress?.({ message: `Looking up USDA for ${item.query}…`, pct })
-    const result = matchOne(meal, item, date, source, source === 'photo' ? items.length : 1)
+    const catalogFoods = source === 'photo' ? catalogHitsFor(item, catalog) : undefined
+    const result = matchOne(meal, item, date, source, source === 'photo' ? items.length : 1, catalogFoods)
+
     const entry = stamp(result.entry, {
       batchId,
       input: meal,
@@ -171,9 +184,9 @@ export async function logFromPhoto(image: Blob, date: string, handlers: JobHandl
     return []
   }
 
-  const { names, lines } = photoCatalogLines(named)
+  const catalog = photoCatalog(named)
   handlers.onProgress?.({ message: 'Looking up USDA servings…', pct: 32 })
-  const portioned = await estimatePhotoPortions(image, names, lines, (message, pct) => {
+  const portioned = await estimatePhotoPortions(image, catalog.names, catalog.lines, (message, pct) => {
     handlers.onProgress?.({ message, pct: pct != null ? 32 + Math.min(20, pct * 0.2) : 40 })
   })
   const items = portioned.items.length ? portioned.items : named
@@ -181,5 +194,5 @@ export async function logFromPhoto(image: Blob, date: string, handlers: JobHandl
   const extractRaw = [identified.raw, portioned.raw].filter(Boolean).join('\n---\n')
   const extractError = identified.error || portioned.error
   const extractPath = portioned.items.length ? portioned.path : identified.path
-  return resolveItems('(photo)', items, date, 'photo', batchId, extractRaw, extractPath, extractError, handlers)
+  return resolveItems('(photo)', items, date, 'photo', batchId, extractRaw, extractPath, extractError, handlers, catalog)
 }

@@ -703,7 +703,7 @@ const cases: Case[] = [
         ? entryFromFood(mapped.food, item('olive oil', { quantity: 1, unit: 'tbsp' }), 'photo', '2026-08-31')
         : null
       const catalog = photoCatalogLines([item('olive oil')]).lines[0] ?? ''
-      const head = catalog.split('|')[0] ?? ''
+      const head = catalog.split(';')[0] ?? ''
       return {
         pass: Boolean(
           mapped &&
@@ -714,6 +714,7 @@ const cases: Case[] = [
             entry.kcal >= 90 &&
             entry.kcal <= 160 &&
             /1 tbsp/i.test(head) &&
+            !/\bA\./.test(catalog) &&
             !/1 cup/i.test(head),
         ),
         got: `${mapped?.food.name} ${mapped?.food.serveG}g → ${entry?.grams}g ${entry?.kcal}kcal · ${catalog}`,
@@ -764,6 +765,23 @@ const cases: Case[] = [
       return {
         pass: snapped.quantity === 1 && snapped.unit === 'tbsp' && entry.kcal >= 90 && entry.kcal <= 160,
         got: `${snapped.quantity} ${snapped.unit} ${entry.grams}g ${entry.kcal}kcal · row ${mapped.food.name}`,
+      }
+    },
+  },
+  {
+    name: 'Photo catalog has no letters; 1 large egg binds to the large record',
+    run() {
+      const catalog = photoCatalogLines([item('egg')]).lines[0] ?? ''
+      const mapped = mapToBaseFood(item('egg', { quantity: 1, unit: 'large' }))
+      return {
+        pass: Boolean(
+          mapped &&
+            mapped.food.serveG >= 40 &&
+            mapped.food.serveG <= 70 &&
+            /large|1 egg/i.test(mapped.food.serveLabel) &&
+            !/\b[A-C]\.\s/.test(catalog),
+        ),
+        got: `${mapped?.food.name} ${mapped?.food.serveLabel} · ${catalog}`,
       }
     },
   },

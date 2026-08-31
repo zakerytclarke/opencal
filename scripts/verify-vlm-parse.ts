@@ -512,18 +512,19 @@ const rows: Row[] = [
   {
     id: 33,
     kind: 'text',
-    name: 'Photo portion uses USDA serving grams as a visual ruler',
+    name: 'Photo portion matches a catalog record by name and household unit',
     input: PHOTO_PORTION_SYSTEM,
-    expect: 'quantity + unit, no invented calories',
+    expect: 'name+qty+unit from catalog, no letter pick',
     run() {
       const s = PHOTO_PORTION_SYSTEM
       return {
         pass:
-          /visual ruler/i.test(s) &&
-          /prefer grams/i.test(s) &&
+          /match each visible food to a USDA catalog record/i.test(s) &&
+          /copy the household unit/i.test(s) &&
+          /do not pick a letter/i.test(s) &&
           /do not invent calories/i.test(s) &&
           /convert_portion/.test(s),
-        got: /visual ruler/i.test(s) ? 'portion + USDA ruler' : 'missing ruler',
+        got: /do not pick a letter/i.test(s) ? 'match record · no letter' : 'still letter pick or missing match',
       }
     },
   },

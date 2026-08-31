@@ -188,14 +188,13 @@ def catalog_lines(foods: list[dict[str, Any]], names: list[str], k: int = 3) -> 
             lines.append(f"- {name}: (no USDA row)")
             continue
         bits = []
-        for i, food in enumerate(hits):
-            letter = chr(65 + i)
+        for food in hits:
             label = food.get("serveLabel") or "serving"
             grams = float(food.get("serveG") or 0)
             if "oil" in q:
                 if grams >= 80:
                     grams = grams / 16.0
                 label = "1 tbsp"
-            bits.append(f"{letter}. {food.get('name')} · USDA {label} ({int(round(grams))} g)")
-        lines.append(f"- {name}: " + " | ".join(bits))
+            bits.append(f"{food.get('name')} · {label} ({int(round(grams))} g)")
+        lines.append(f"- {name}: " + "; ".join(bits))
     return lines
