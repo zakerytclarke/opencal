@@ -58,6 +58,31 @@ const sum = summarize([hit, miss])
 check('summary n and mae', sum.n === 2 && Math.abs(sum.kcalMae - (20 + 85) / 2) < 1e-6, `${sum.n} ${sum.kcalMae}`)
 check('named acc is 1/2', sum.namedAcc === 0.5, String(sum.namedAcc))
 check('within20 counts only the close case', sum.within20 === 0.5, String(sum.within20))
+check('kcal WAPE is total abs / total gold', Math.abs(sum.kcalWape - (20 + 85) / (200 + 105)) < 1e-9, String(sum.kcalWape))
+check('kcal median relative error averages the two APEs', Math.abs(sum.kcalMdape - (20 / 200 + 85 / 105) / 2) < 1e-9, String(sum.kcalMdape))
+
+const macros = scoreCase({
+  id: 'd',
+  split: 'test',
+  modality: 'image',
+  predictedNames: ['Chicken'],
+  goldAliases: [['chicken']],
+  kcalPred: 250,
+  kcalGold: 200,
+  proteinPred: 30,
+  proteinGold: 20,
+  carbsPred: 5,
+  carbsGold: 0,
+  fatPred: 10,
+  fatGold: 12,
+  unmatched: 0,
+  ms: 1,
+})
+check('protein abs err', macros.proteinAbsErr === 10, String(macros.proteinAbsErr))
+const macroSum = summarize([macros])
+check('protein MAE', macroSum.protein.mae === 10, String(macroSum.protein.mae))
+check('protein WAPE', macroSum.protein.wape === 10 / 20, String(macroSum.protein.wape))
+check('meal ≥50 kcal is counted', macroSum.mealN === 1 && macroSum.within20Meal === 0, `${macroSum.mealN} ${macroSum.within20Meal}`)
 
 const failed = cases.filter((c) => !c.pass)
 console.log('| # | Test | Got | Result |')

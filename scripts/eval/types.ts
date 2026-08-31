@@ -8,6 +8,13 @@ export type ExpectItem = {
   foodId?: string
 }
 
+export type MealNutrition = {
+  kcal: number
+  protein: number
+  carbs: number
+  fat: number
+}
+
 export type TextCase = {
   id: string
   text: string
@@ -28,6 +35,8 @@ export type ImageCase = {
   loose?: boolean
   /** Multi-ingredient gold. When set, scoring uses these instead of the single query/aliases fields. */
   expect?: ExpectItem[]
+  /** Lab / dataset dish totals. When set, calorie and macro gold uses these instead of USDA-mapped expect items. */
+  nutrition?: MealNutrition
 }
 
 export type TextSplitFile = {
@@ -49,6 +58,7 @@ export type CaseScore = {
   split: EvalSplit
   modality: 'text' | 'image'
   source?: string
+  loose?: boolean
   named: boolean
   namedCount: number
   namedNeed: number
@@ -56,11 +66,33 @@ export type CaseScore = {
   kcalGold: number
   kcalAbsErr: number
   kcalApe: number
+  proteinPred: number
+  proteinGold: number
+  proteinAbsErr: number
+  proteinApe: number
+  carbsPred: number
+  carbsGold: number
+  carbsAbsErr: number
+  carbsApe: number
+  fatPred: number
+  fatGold: number
+  fatAbsErr: number
+  fatApe: number
   unmatched: number
   itemsPred: string[]
   itemsGold: string[]
   ms: number
   error?: string
+}
+
+export type NutrientSummary = {
+  mae: number
+  mdae: number
+  mape: number
+  wape: number
+  mdape: number
+  within20: number
+  within50: number
 }
 
 export type MetricSummary = {
@@ -70,8 +102,16 @@ export type MetricSummary = {
   kcalMae: number
   kcalMdae: number
   kcalMape: number
+  kcalWape: number
+  kcalMdape: number
   within20: number
   within50: number
+  within20Meal: number
+  within50Meal: number
+  mealN: number
   kcalMaeNamed: number | null
+  protein: NutrientSummary
+  carbs: NutrientSummary
+  fat: NutrientSummary
   meanMs: number
 }

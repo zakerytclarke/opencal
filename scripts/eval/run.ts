@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { logFromPhoto, logFromText } from '../../src/lib/pipeline.ts'
-import { goldMealKcal, imageExpect } from './gold.ts'
-import { formatSummary, scoreCase, summarize } from './metrics.ts'
+import { caseNutrition, goldMealNutrition, imageExpect } from './gold.ts'
+import { formatSummary, goldFields, nutritionFromEntries, predFields, scoreCase, summarize } from './metrics.ts'
 import { setupLocalFoods } from './setup.ts'
 import { imageCasesFor, loadAllImageSplits } from './image-splits.ts'
 import type { CaseScore, EvalSplit, TextCase, TextSplitFile } from './types.ts'
@@ -48,11 +48,11 @@ const runImages = modality === 'images' || modality === 'both'
 
 if (runText) {
   for (const row of take(textCases, limit)) {
-    const gold = goldMealKcal(row.expect)
+    const goldN = goldMealNutrition(row.expect)
     const started = Date.now()
     try {
       const entries = await logFromText(row.text, '1970-01-01', 'search')
-      const kcalPred = entries.reduce((s, e) => s + e.kcal, 0)
+      const pred = nutritionFromEntries(entries)
       const names = entries.map((e) => `${e.brand ?? ''} ${e.name}`.trim())
       const score = scoreCase({
         id: row.id,
@@ -60,14 +60,14 @@ if (runText) {
         modality: 'text',
         predictedNames: names,
         goldAliases: row.expect.map((e) => e.aliases),
-        kcalPred,
-        kcalGold: gold,
+        ...predFields(pred),
+        ...goldFields(goldN),
         unmatched: entries.filter((e) => e.foodId === 'unmatched' || e.foodId === 'quick').length,
         ms: Date.now() - started,
       })
       scores.push(score)
       console.log(
-        `${score.named ? 'HIT' : 'MISS'} ${row.id}  pred ${Math.round(kcalPred)} vs gold ${Math.round(gold)}  ${names.join(' · ') || '(none)'}`,
+        `${score.named ? 'HIT' : 'MISS'} ${row.id}  pred ${Math.round(pred.kcal)} vs gold ${Math.round(goldN.kcal)}  ${names.join(' · ') || '(none)'}`,
       )
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -79,7 +79,7 @@ if (runText) {
           predictedNames: [],
           goldAliases: row.expect.map((e) => e.aliases),
           kcalPred: 0,
-          kcalGold: gold,
+          ...goldFields(goldN),
           unmatched: 1,
           ms: Date.now() - started,
           error: message,
@@ -93,7 +93,7 @@ if (runText) {
 if (runImages) {
   for (const row of take(imageCases, limit)) {
     const goldItems = imageExpect(row)
-    const gold = goldMealKcal(goldItems)
+    const goldN = caseNutrition(row, goldItems)
     const abs = resolve(root, row.path)
     const started = Date.now()
     if (!existsSync(abs)) {
@@ -108,7 +108,7 @@ if (runImages) {
           goldAliases: goldItems.map((e) => e.aliases),
           loose: row.loose,
           kcalPred: 0,
-          kcalGold: gold,
+          ...goldFields(goldN),
           unmatched: 1,
           ms: 0,
           error: `missing file ${row.path}`,
@@ -119,7 +119,7 @@ if (runImages) {
     try {
       const blob = new Blob([readFileSync(abs)], { type: mimeFor(abs) })
       const entries = await logFromPhoto(blob, '1970-01-01')
-      const kcalPred = entries.reduce((s, e) => s + e.kcal, 0)
+      const pred = nutritionFromEntries(entries)
       const names = entries.map((e) => `${e.brand ?? ''} ${e.name}`.trim())
       const score = scoreCase({
         id: row.id,
@@ -129,14 +129,14 @@ if (runImages) {
         predictedNames: names,
         goldAliases: goldItems.map((e) => e.aliases),
         loose: row.loose,
-        kcalPred,
-        kcalGold: gold,
+        ...predFields(pred),
+        ...goldFields(goldN),
         unmatched: entries.filter((e) => e.foodId === 'unmatched' || e.foodId === 'quick').length,
         ms: Date.now() - started,
       })
       scores.push(score)
       console.log(
-        `${score.named ? 'HIT' : 'MISS'} ${row.id}  pred ${Math.round(kcalPred)} vs gold ${Math.round(gold)}  ${names.join(' · ') || '(none)'}`,
+        `${score.named ? 'HIT' : 'MISS'} ${row.id}  pred ${Math.round(pred.kcal)} vs gold ${Math.round(goldN.kcal)}  ${names.join(' · ') || '(none)'}`,
       )
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -150,7 +150,7 @@ if (runImages) {
           goldAliases: goldItems.map((e) => e.aliases),
           loose: row.loose,
           kcalPred: 0,
-          kcalGold: gold,
+          ...goldFields(goldN),
           unmatched: 1,
           ms: Date.now() - started,
           error: message,
@@ -170,7 +170,7 @@ const byModality = {
 const report = [
   `# OpenCal pipeline eval · ${split} · ${new Date().toISOString()}`,
   '',
-  'Calories are production pipeline output vs USDA gold for the labeled food and serving. The VLM extracts name/brand/qty/unit; the host maps to a USDA row. FooDD class folders and Nutrition5k identification plates supply extra image labels.',
+  'Calories are production pipeline output vs gold. Nutrition5k uses dataset dish totals (kcal + macros). Text and fixtures use USDA-mapped expect items. The VLM extracts name/brand/qty/unit; the host maps to a USDA row.',
   '',
   runText ? formatSummary('Text', summarize(byModality.text)) : '',
   runImages ? formatSummary('Images', summarize(byModality.image)) : '',

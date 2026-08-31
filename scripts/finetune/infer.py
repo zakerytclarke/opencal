@@ -236,6 +236,10 @@ def main() -> None:
     p.add_argument("--out", default="")
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--pick", action="store_true", help="Also run lettered pick eval (not used in production)")
+    p.add_argument("--skip-text", action="store_true")
+    p.add_argument("--skip-images", action="store_true")
+    p.add_argument("--skip-coach", action="store_true")
+    p.add_argument("--skip-cite", action="store_true")
     args = p.parse_args()
 
     out_dir = Path(args.out) if args.out else ROOT / "evals" / "data" / "finetune" / "preds" / args.tag
@@ -264,46 +268,50 @@ def main() -> None:
         image_rows = image_rows[: args.limit]
 
     extracts = []
-    for row in text_rows:
-        messages = [
-            {"role": "system", "content": [{"type": "text", "text": EXTRACT_SYSTEM}]},
-            {"role": "user", "content": [{"type": "text", "text": EXTRACT_USER.format(meal=row["text"])}]},
-        ]
-        raw = generate(model, processor, messages, 220, device, EXTRACT_PREFIX)
-        items = parse_foods(raw)
-        extracts.append({"id": row["id"], "modality": "text", "raw": raw, "items": items, "text": row["text"]})
-        print(f"TEXT {row['id']} → {items or raw[:80]!r}", flush=True)
+    if not args.skip_text:
+        for row in text_rows:
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": EXTRACT_SYSTEM}]},
+                {"role": "user", "content": [{"type": "text", "text": EXTRACT_USER.format(meal=row["text"])}]},
+            ]
+            raw = generate(model, processor, messages, 220, device, EXTRACT_PREFIX)
+            items = parse_foods(raw)
+            extracts.append({"id": row["id"], "modality": "text", "raw": raw, "items": items, "text": row["text"]})
+            print(f"TEXT {row['id']} → {items or raw[:80]!r}", flush=True)
 
-    for row in image_rows:
-        path = ROOT / row["path"]
-        if not path.exists():
-            extracts.append({"id": row["id"], "modality": "image", "raw": "", "items": [], "error": f"missing {path}"})
-            continue
-        img = Image.open(path).convert("RGB")
-        messages = [
-            {"role": "system", "content": [{"type": "text", "text": PHOTO_EXTRACT_SYSTEM}]},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": img},
-                    {"type": "text", "text": PHOTO_EXTRACT_USER},
-                ],
-            },
-        ]
-        raw = generate(model, processor, messages, 280, device, EXTRACT_PREFIX)
-        items = parse_foods(raw)
-        extracts.append({"id": row["id"], "modality": "image", "raw": raw, "items": items, "path": row["path"]})
-        print(f"IMAGE {row['id']} → {items or raw[:80]!r}", flush=True)
+    if not args.skip_images:
+        for i, row in enumerate(image_rows, 1):
+            path = ROOT / row["path"]
+            if not path.exists():
+                extracts.append({"id": row["id"], "modality": "image", "raw": "", "items": [], "error": f"missing {path}"})
+                print(f"IMAGE {i}/{len(image_rows)} {row['id']} missing {path}", flush=True)
+                continue
+            img = Image.open(path).convert("RGB")
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": PHOTO_EXTRACT_SYSTEM}]},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": img},
+                        {"type": "text", "text": PHOTO_EXTRACT_USER},
+                    ],
+                },
+            ]
+            raw = generate(model, processor, messages, 280, device, EXTRACT_PREFIX)
+            items = parse_foods(raw)
+            extracts.append({"id": row["id"], "modality": "image", "raw": raw, "items": items, "path": row["path"]})
+            print(f"IMAGE {i}/{len(image_rows)} {row['id']} → {items or raw[:80]!r}", flush=True)
 
     coach = []
-    for row in coach_split["test"]:
-        messages = [
-            {"role": "system", "content": [{"type": "text", "text": COACH_SYSTEM}]},
-            {"role": "user", "content": [{"type": "text", "text": row["user"]}]},
-        ]
-        raw = generate(model, processor, messages, 180, device)
-        coach.append({"id": row["id"], "user": row["user"], "raw": raw, "expect": row["expect"]})
-        print(f"COACH {row['id']} → {raw[:100]!r}", flush=True)
+    if not args.skip_coach:
+        for row in coach_split["test"]:
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": COACH_SYSTEM}]},
+                {"role": "user", "content": [{"type": "text", "text": row["user"]}]},
+            ]
+            raw = generate(model, processor, messages, 180, device)
+            coach.append({"id": row["id"], "user": row["user"], "raw": raw, "expect": row["expect"]})
+            print(f"COACH {row['id']} → {raw[:100]!r}", flush=True)
 
     pick_split = ROOT / "evals/splits/pick.json"
     pick_preds = []
@@ -335,7 +343,7 @@ def main() -> None:
 
     cite_split = ROOT / "evals/splits/cite.json"
     cite_preds = []
-    if cite_split.exists():
+    if cite_split.exists() and not args.skip_cite:
         for row in load_json(cite_split)["test"]:
             messages = [
                 {"role": "system", "content": [{"type": "text", "text": COACH_SYSTEM}]},

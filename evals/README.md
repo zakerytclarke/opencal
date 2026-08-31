@@ -28,7 +28,7 @@ FOODD_DIR=/path/to/FooDD npm run eval:prepare
 npm run eval:images
 ```
 
-Results: `evals/results/latest.md` (MAE, MAPE, % within 20/50 kcal relative, name accuracy, MAE on correctly named foods).
+Results: `evals/results/latest.md` (kcal MAE, WAPE, median relative error, % within 20/50, protein/carbs/fat MAE). Name accuracy is secondary.
 
 `npm test` covers metric helpers only. These evals are slow (on-device VLM) and are not part of CI.
 

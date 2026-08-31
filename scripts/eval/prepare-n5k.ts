@@ -33,6 +33,11 @@ type N5kRow = {
   id?: string
   file_name?: string
   ingredients?: N5kIng[]
+  total_calories?: number
+  total_protein?: number
+  total_carb?: number
+  total_fat?: number
+  total_mass?: number
 }
 
 const NAME_TO_CLASS: Record<string, string> = {
@@ -247,6 +252,12 @@ function toCase(row: N5kRow, dest: string): ImageCase {
     kcalPer100g: spec?.kcalPer100g,
     loose: vis.length > 1,
     expect,
+    nutrition: {
+      kcal: Number(row.total_calories) || 0,
+      protein: Number(row.total_protein) || 0,
+      carbs: Number(row.total_carb) || 0,
+      fat: Number(row.total_fat) || 0,
+    },
   }
 }
 
@@ -267,7 +278,7 @@ if (!test.length) {
 
 const out: ImageSplitFile = {
   seed: SEED,
-  note: `Nutrition5k 80/20. Pool ${pool.length} usable plates · test ${test.length} (${(100 * test.length / pool.length).toFixed(1)}%) · ${leaked} overlap prior train thumbs · never banana.jpg/eggs.jpg.`,
+  note: `Nutrition5k 80/20. Pool ${pool.length} usable plates · test ${test.length} (${(100 * test.length / pool.length).toFixed(1)}%) · ${leaked} overlap prior train thumbs · gold is dish total_calories/protein/carb/fat · never banana.jpg/eggs.jpg.`,
   train: [],
   test,
 }

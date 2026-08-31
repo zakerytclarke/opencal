@@ -1,110 +1,55 @@
-# OpenCal fine-tune: before vs after
+# Original vs fine-tuned: meal nutrition on photos
 
-Held-out eval is `evals/splits/text.json` + `images.json` test, plus Nutrition5k identification (`images.n5k.json`) and `coach.json` / `cite.json`.
-The VLM extracts name, brand, quantity, and unit. Calories are MiniSearch + convert_portion on the host-mapped USDA row, not model-invented numbers.
+Same 20% Nutrition5k test (409 plates, seed `opencal-n5k-eval-v2`).
+The VLM only names foods and household portions. Calories and macros come from the host USDA map + `convert_portion`.
+Gold is Nutrition5k **dish totals** (weighed ingredients: kcal, protein, carbs, fat) — not a household USDA guess and not name accuracy.
 
-v5 numbers below are the previous canonical run on 16 text + 2 fixture photos (n=18). v6 adds 32 held-out Nutrition5k identification plates (FooDD classes: apple, carrot, cucumber, egg, orange, rice, tomato) that v5 never scored. Compare **text** MAE for calories and **image name accuracy** for vision. FooDD itself is not on disk.
+## Why these metrics
 
-## Meal calories (primary)
+- **MAE** is mean |pred − gold| in kcal or grams. This is the number that matters for a diary.
+- **WAPE** is total absolute error / total gold across the set. Unlike mean % error, a 5 kcal snack does not explode the score.
+- **Median relative error** is the typical plate’s |pred − gold| / gold.
+- **Within 20% / 50%** is how often the logged meal is close enough to be useful.
 
-### Baseline (n=18)
-- Food name accuracy: 100.0%
-- Calorie MAE: 56.1 kcal (median 0.0)
-- Calorie MAPE: 25.9% · within 20%: 88.9% · within 50%: 94.4%
-- Calorie MAE when named correctly: 56.1
+## Nutrition5k 20% (primary)
 
-### Fine-tuned v1 (n=18)
-- Food name accuracy: 100.0%
-- Calorie MAE: 56.1 kcal (median 0.0)
-- Calorie MAPE: 25.9% · within 20%: 88.9% · within 50%: 94.4%
-- Calorie MAE when named correctly: 56.1
-
-### Fine-tuned (n=50)
-- Food name accuracy: 98.0%
-- Calorie MAE: 43.1 kcal (median 12.0)
-- Calorie MAPE: 52.3% · within 20%: 54.0% · within 50%: 56.0%
-- Calorie MAE when named correctly: 36.9
-
-| metric | baseline | fine-tuned | change |
+| metric | original | fine-tuned | change |
 |---|---:|---:|---|
-| name acc | 100.0% | 98.0% | -0.0 (worse) |
-| kcal MAE | 56.1 | 43.1 | -13.0 (improved) |
-| kcal median AE | 0.0 | 12.0 | +12.0 (worse) |
-| within 20% | 88.9% | 54.0% | -34.9 pp (worse) |
-| within 50% | 94.4% | 56.0% | -38.4 pp (worse) |
+| kcal MAE | 729.9 | 114.0 | -615.9 (improved) |
+| kcal median AE | 244.6 | 41.0 | -203.5 (improved) |
+| kcal WAPE | 734.6% | 114.7% | -619.9 pp (improved) |
+| kcal median relative error | 750.1% | 86.6% | -663.4 pp (improved) |
+| within 20% of gold kcal | 3.4% | 5.9% | +2.4 pp (improved) |
+| within 50% of gold kcal | 11.7% | 21.5% | +9.8 pp (improved) |
+| meals ≥50 kcal within 20% | 6.2% | 8.9% | +2.6 pp (improved) |
+| protein MAE (g) | 21.0 | 6.0 | -15.0 (improved) |
+| carbs MAE (g) | 91.6 | 12.7 | -78.8 (improved) |
+| fat MAE (g) | 35.8 | 5.9 | -29.9 (improved) |
+| name accuracy (secondary) | 67.7% | 73.8% | +6.1 pp (improved) |
 
-v1 vs this run (same held-out split):
+## kcal by slice
 
-| metric | v1 | this run | change |
-|---|---:|---:|---|
-| name acc | 100.0% | 98.0% | -0.0 (worse) |
-| kcal MAE | 56.1 | 43.1 | -13.0 (improved) |
+| slice | n | kcal MAE | median AE | WAPE | median rel. | within 20% | within 50% | ≥50 kcal within 20% |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| N5k 20% | 409 | 729.9 → **114.0** | 244.6 → 41.0 | 734.6% → **114.7%** | 750.1% → 86.6% | 3.4% → 5.9% | 11.7% → 21.5% | 6.2% → 8.9% |
+| N5k singles | 305 | 611.1 → **78.2** | 224.9 → 37.0 | 1210.6% → **155.0%** | 913.4% → 89.1% | 3.6% → 4.3% | 12.5% → 19.3% | 8.3% → 5.5% |
+| N5k mixed | 104 | 1078.2 → **218.8** | 465.1 → 147.0 | 444.2% → **90.2%** | 367.6% → 79.8% | 2.9% → 10.6% | 9.6% → 27.9% | 3.6% → 13.3% |
+| Fixtures | 2 | 389.5 → **399.0** | 389.5 → 399.0 | 109.7% → **112.4%** | 210.5% → 212.2% | 50.0% → 50.0% | 50.0% → 50.0% | 50.0% → 50.0% |
+| Text | 16 | 16.8 → **1.4** | 0.0 → 0.0 | 5.2% → **0.4%** | 0.0% → 0.0% | 93.8% → 100.0% | 93.8% → 100.0% | 93.3% → 100.0% |
 
-## Text vs images
+## Macros on the 20% image test
 
-### Baseline text (n=16)
-- Food name accuracy: 100.0%
-- Calorie MAE: 1.4 kcal (median 0.0)
-- Calorie MAPE: 0.4% · within 20%: 100.0% · within 50%: 100.0%
-- Calorie MAE when named correctly: 1.4
-### Fine-tuned v1 text (n=16)
-- Food name accuracy: 100.0%
-- Calorie MAE: 1.4 kcal (median 0.0)
-- Calorie MAPE: 0.4% · within 20%: 100.0% · within 50%: 100.0%
-- Calorie MAE when named correctly: 1.4
-### Fine-tuned text (n=16)
-- Food name accuracy: 100.0%
-- Calorie MAE: 1.4 kcal (median 0.0)
-- Calorie MAPE: 0.4% · within 20%: 100.0% · within 50%: 100.0%
-- Calorie MAE when named correctly: 1.4
-### Baseline images (n=2)
-- Food name accuracy: 100.0%
-- Calorie MAE: 494.0 kcal (median 494.0)
-- Calorie MAPE: 230.3% · within 20%: 0.0% · within 50%: 50.0%
-- Calorie MAE when named correctly: 494.0
-### Fine-tuned v1 images (n=2)
-- Food name accuracy: 100.0%
-- Calorie MAE: 494.0 kcal (median 494.0)
-- Calorie MAPE: 230.3% · within 20%: 0.0% · within 50%: 50.0%
-- Calorie MAE when named correctly: 494.0
-### Fine-tuned images (n=34)
-- Food name accuracy: 97.1%
-- Calorie MAE: 62.7 kcal (median 27.0)
-- Calorie MAPE: 76.8% · within 20%: 32.4% · within 50%: 35.3%
-- Calorie MAE when named correctly: 54.2
+| nutrient | MAE before | MAE after | WAPE before | WAPE after | median rel. before | median rel. after |
+|---|---:|---:|---:|---:|---:|---:|
+| kcal | 729.9 kcal | **114.0 kcal** | 734.6% | **114.7%** | 750.1% | 86.6% |
+| protein | 21.0 g | **6.0 g** | 368.9% | **105.3%** | 497.8% | 75.4% |
+| carbs | 91.6 g | **12.7 g** | 814.9% | **113.3%** | 817.0% | 84.5% |
+| fat | 35.8 g | **5.9 g** | 842.7% | **138.5%** | 168.0% | 31.4% |
 
-## Coach (don't forget how to talk)
+## What this means
 
-| metric | baseline | fine-tuned | change |
-|---|---:|---:|---|
-| overall | 100.0% | 100.0% | +0.0 pp (same) |
-| log → JSON | 100.0% | 100.0% | +0.0 pp (same) |
-| chat/Q → prose | 100.0% | 100.0% | +0.0 pp (same) |
-| USDA kcal in range | 100.0% | 100.0% | +0.0 pp (same) |
+The original model is not a calorie estimator. It counts pieces and the host maps those to full USDA servings, so a handful of almonds becomes thousands of kcal. Fine-tuning is the difference between unusable and in-the-ballpark.
 
-Eval infer uses the same `{"foods":[` assistant prefix as the PWA.
-Text MAE applies the same refineExtracted host pass as the PWA (bare eggs → large, compound names).
-Production no longer asks the VLM to pick a USDA letter; the host maps extract JSON to a base food.
-`fix-eggs` gold is 2 large eggs (185 kcal) while the photo is a mixed plate;
-the model emits JSON for egg plus sides, which inflates image MAE vs that eggs-only label.
-Image identification (name accuracy) is the vision metric; banana count is the clean fixture calorie check.
-If MiniSearch cannot map the extracted name, the host leaves the diary unmatched (0 kcal).
+The fine-tune is still not accurate enough to trust as a food scale. Median plate is off by ~87% relative, and only about 9% of meals ≥50 kcal land within 20% of the weighed dish. The leftover error is portion size: the model emits household units (1 apple, 1 slice) while Nutrition5k gold is grams on the scale, including oil the camera barely sees.
 
-## Nutrition5k 20% image test (n=409)
-
-Usable pool is 2,041 plates with an image and a visible ingredient. Test is **409 (20.0%)**, all unused by prior train thumbs (0 leak). Frozen banana/eggs fixtures are extra (n=2), not part of that 20%.
-
-| Slice | n | Name acc | kcal MAE |
-|---|---:|---:|---:|
-| Text (unchanged) | 16 | 100% | 1.4 |
-| Fixtures | 2 | 100% | 399 |
-| N5k singles (1 visible food) | 305 | 70.2% | 79.5 |
-| N5k mixed (loose) | 104 | 84.6% | 221.6 |
-| N5k test (20%) | 409 | 73.8% | 115.6 |
-| All images | 411 | 74.0% | 117.0 |
-
-The old n=34 number was a capped FooDD-class sample, not 20% of the photo pool. Identification on the real 20% is ~74%; calorie error is still mostly portion unit (oz/g vs medium) and mixed plates.
-
-## Citation / refuse (coach)
-
-Held-out `evals/splits/cite.json`: 3/3 cite USDA/convert_portion or refuse without a row.
+Name accuracy is not the product metric. A correctly named food with the wrong portion is still a wrong diary entry.

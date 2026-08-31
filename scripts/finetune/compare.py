@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Compare baseline vs fine-tuned extract→USDA metrics and coach behavior."""
+"""Compare baseline vs fine-tuned extract→USDA nutrition (kcal + macros)."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,87 +14,16 @@ def load(path: Path):
     return json.loads(path.read_text())
 
 
-def parse_foods(text: str) -> list[dict]:
-    cleaned = re.sub(r"<\|[^>]+?\|>", "", text).strip()
-    if "{" not in cleaned:
-        return []
-    blob = cleaned[cleaned.find("{") : cleaned.rfind("}") + 1]
-    try:
-        obj = json.loads(blob)
-    except json.JSONDecodeError:
-        return []
-    rows = obj.get("foods") if isinstance(obj, dict) else obj
-    if not isinstance(rows, list):
-        return []
-    return [r for r in rows if isinstance(r, dict) and (r.get("name") or r.get("query"))]
-
-
-def score_coach(pred_path: Path, gold_path: Path) -> dict:
-    preds = {p["id"]: p for p in load(pred_path)}
-    gold = load(gold_path)["test"]
-    n = len(gold)
-    json_ok = 0
-    json_n = 0
-    prose_ok = 0
-    prose_n = 0
-    kcal_ok = 0
-    kcal_n = 0
-    rows = []
-    for g in gold:
-        raw = (preds.get(g["id"]) or {}).get("raw") or ""
-        rec = {"id": g["id"], "expect": g["expect"], "ok": False, "raw": raw[:180]}
-        if g["expect"] == "json":
-            json_n += 1
-            foods = parse_foods(raw)
-            need = g.get("foods") or []
-            hit = 0
-            for exp in need:
-                name = (exp.get("name") or "").lower()
-                if any(name in str(f.get("name") or "").lower() for f in foods):
-                    hit += 1
-            rec["ok"] = bool(foods) and hit == len(need)
-            json_ok += int(rec["ok"])
-        else:
-            prose_n += 1
-            is_json = bool(parse_foods(raw))
-            must = [m.lower() for m in g.get("must") or []]
-            must_not = g.get("mustNot") or []
-            ok = (not is_json) and all(m in raw.lower() for m in must) and all(x not in raw for x in must_not)
-            rec["ok"] = ok
-            prose_ok += int(ok)
-            rng = g.get("kcalGold")
-            if rng:
-                kcal_n += 1
-                nums = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*kcal", raw.lower())]
-                rec["ok_kcal"] = any(rng[0] <= n <= rng[1] for n in nums)
-                kcal_ok += int(rec["ok_kcal"])
-        rows.append(rec)
-    return {
-        "n": n,
-        "jsonAcc": json_ok / json_n if json_n else None,
-        "proseAcc": prose_ok / prose_n if prose_n else None,
-        "kcalInRange": kcal_ok / kcal_n if kcal_n else None,
-        "pass": sum(r["ok"] for r in rows) / n if n else 0,
-        "rows": rows,
-    }
-
-
 def pct(x) -> str:
     if x is None:
         return "n/a"
     return f"{100 * x:.1f}%"
 
 
-def block(title: str, s: dict) -> str:
-    return "\n".join(
-        [
-            f"### {title} (n={s.get('n', 0)})",
-            f"- Food name accuracy: {pct(s.get('namedAcc'))}",
-            f"- Calorie MAE: {s.get('kcalMae', 0):.1f} kcal (median {s.get('kcalMdae', 0):.1f})",
-            f"- Calorie MAPE: {pct(s.get('kcalMape'))} · within 20%: {pct(s.get('within20'))} · within 50%: {pct(s.get('within50'))}",
-            f"- Calorie MAE when named correctly: {s['kcalMaeNamed']:.1f}" if s.get("kcalMaeNamed") is not None else "- Calorie MAE when named correctly: n/a",
-        ]
-    )
+def num(x, digits=1) -> str:
+    if x is None:
+        return "n/a"
+    return f"{x:.{digits}f}"
 
 
 def delta(a, b, lower_better=False) -> str:
@@ -104,130 +32,148 @@ def delta(a, b, lower_better=False) -> str:
     d = b - a
     better = (d < 0) if lower_better else (d > 0)
     arrow = "improved" if better else ("worse" if d != 0 else "same")
-    if isinstance(a, float) and abs(a) <= 1 and abs(b) <= 1:
-        return f"{d * 100:+.1f} pp ({arrow})"
     return f"{d:+.1f} ({arrow})"
+
+
+def delta_pp(a, b, lower_better=False) -> str:
+    if a is None or b is None:
+        return "n/a"
+    d = (b - a) * 100
+    better = (d < 0) if lower_better else (d > 0)
+    arrow = "improved" if better else ("worse" if d != 0 else "same")
+    return f"{d:+.1f} pp ({arrow})"
+
+
+def slice_of(doc: dict, name: str) -> dict:
+    summary = doc.get("summary") or {}
+    if name in summary:
+        return summary[name]
+    return {}
+
+
+def kcal_table(before: dict, after: dict, slices: list[tuple[str, str]]) -> list[str]:
+    lines = [
+        "| slice | n | kcal MAE | median AE | WAPE | median rel. | within 20% | within 50% | ≥50 kcal within 20% |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for title, key in slices:
+        b, a = slice_of(before, key), slice_of(after, key)
+        if not a and not b:
+            continue
+        n = (a or b).get("n", 0)
+        lines.append(
+            f"| {title} | {n} "
+            f"| {num(b.get('kcalMae'))} → **{num(a.get('kcalMae'))}** "
+            f"| {num(b.get('kcalMdae'))} → {num(a.get('kcalMdae'))} "
+            f"| {pct(b.get('kcalWape'))} → **{pct(a.get('kcalWape'))}** "
+            f"| {pct(b.get('kcalMdape'))} → {pct(a.get('kcalMdape'))} "
+            f"| {pct(b.get('within20'))} → {pct(a.get('within20'))} "
+            f"| {pct(b.get('within50'))} → {pct(a.get('within50'))} "
+            f"| {pct(b.get('within20Meal'))} → {pct(a.get('within20Meal'))} |"
+        )
+    return lines
+
+
+def macro_table(before: dict, after: dict, key: str) -> list[str]:
+    b, a = slice_of(before, key), slice_of(after, key)
+    lines = [
+        "| nutrient | MAE before | MAE after | WAPE before | WAPE after | median rel. before | median rel. after |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for label, field, unit in (("kcal", None, "kcal"), ("protein", "protein", "g"), ("carbs", "carbs", "g"), ("fat", "fat", "g")):
+        if field is None:
+            lines.append(
+                f"| kcal | {num(b.get('kcalMae'))} {unit} | **{num(a.get('kcalMae'))} {unit}** "
+                f"| {pct(b.get('kcalWape'))} | **{pct(a.get('kcalWape'))}** "
+                f"| {pct(b.get('kcalMdape'))} | {pct(a.get('kcalMdape'))} |"
+            )
+            continue
+        bn, an = b.get(field) or {}, a.get(field) or {}
+        lines.append(
+            f"| {label} | {num(bn.get('mae'))} {unit} | **{num(an.get('mae'))} {unit}** "
+            f"| {pct(bn.get('wape'))} | **{pct(an.get('wape'))}** "
+            f"| {pct(bn.get('mdape'))} | {pct(an.get('mdape'))} |"
+        )
+    return lines
+
+
+def change_table(b: dict, a: dict) -> list[str]:
+    bp, ap = b.get("protein") or {}, a.get("protein") or {}
+    bc, ac = b.get("carbs") or {}, a.get("carbs") or {}
+    bf, af = b.get("fat") or {}, a.get("fat") or {}
+    return [
+        "| metric | original | fine-tuned | change |",
+        "|---|---:|---:|---|",
+        f"| kcal MAE | {num(b.get('kcalMae'))} | {num(a.get('kcalMae'))} | {delta(b.get('kcalMae'), a.get('kcalMae'), True)} |",
+        f"| kcal median AE | {num(b.get('kcalMdae'))} | {num(a.get('kcalMdae'))} | {delta(b.get('kcalMdae'), a.get('kcalMdae'), True)} |",
+        f"| kcal WAPE | {pct(b.get('kcalWape'))} | {pct(a.get('kcalWape'))} | {delta_pp(b.get('kcalWape'), a.get('kcalWape'), True)} |",
+        f"| kcal median relative error | {pct(b.get('kcalMdape'))} | {pct(a.get('kcalMdape'))} | {delta_pp(b.get('kcalMdape'), a.get('kcalMdape'), True)} |",
+        f"| within 20% of gold kcal | {pct(b.get('within20'))} | {pct(a.get('within20'))} | {delta_pp(b.get('within20'), a.get('within20'))} |",
+        f"| within 50% of gold kcal | {pct(b.get('within50'))} | {pct(a.get('within50'))} | {delta_pp(b.get('within50'), a.get('within50'))} |",
+        f"| meals ≥50 kcal within 20% | {pct(b.get('within20Meal'))} | {pct(a.get('within20Meal'))} | {delta_pp(b.get('within20Meal'), a.get('within20Meal'))} |",
+        f"| protein MAE (g) | {num(bp.get('mae'))} | {num(ap.get('mae'))} | {delta(bp.get('mae'), ap.get('mae'), True)} |",
+        f"| carbs MAE (g) | {num(bc.get('mae'))} | {num(ac.get('mae'))} | {delta(bc.get('mae'), ac.get('mae'), True)} |",
+        f"| fat MAE (g) | {num(bf.get('mae'))} | {num(af.get('mae'))} | {delta(bf.get('mae'), af.get('mae'), True)} |",
+        f"| name accuracy (secondary) | {pct(b.get('namedAcc'))} | {pct(a.get('namedAcc'))} | {delta_pp(b.get('namedAcc'), a.get('namedAcc'))} |",
+    ]
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--before", default=str(ROOT / "evals/results/ft-baseline.json"))
-    p.add_argument("--after", default=str(ROOT / "evals/results/ft-finetuned.json"))
-    p.add_argument("--v1", default=str(ROOT / "evals/results/ft-v1.json"), help="Previous fine-tune summary, if present")
-    p.add_argument("--coach-before", default=str(ROOT / "evals/data/finetune/preds/baseline/coach.json"))
-    p.add_argument("--coach-after", default=str(ROOT / "evals/data/finetune/preds/finetuned/coach.json"))
+    p.add_argument("--before", default=str(ROOT / "evals/results/ft-base-n5k20.json"))
+    p.add_argument("--after", default=str(ROOT / "evals/results/ft-n5k20.json"))
     p.add_argument("--out", default=str(ROOT / "evals/results/ft-compare.md"))
     args = p.parse_args()
 
     before = load(Path(args.before))
     after = load(Path(args.after))
-    v1 = load(Path(args.v1)) if Path(args.v1).exists() else None
-    gold_coach = ROOT / "evals/splits/coach.json"
-    coach_b = score_coach(Path(args.coach_before), gold_coach) if Path(args.coach_before).exists() else None
-    coach_a = score_coach(Path(args.coach_after), gold_coach) if Path(args.coach_after).exists() else None
+    b_n5k, a_n5k = slice_of(before, "n5k"), slice_of(after, "n5k")
 
-    b_all = before["summary"]["all"]
-    a_all = after["summary"]["all"]
     lines = [
-        "# OpenCal fine-tune: before vs after",
+        "# Original vs fine-tuned: meal nutrition on photos",
         "",
-        "Held-out eval is `evals/splits/text.json` + `images.json` test, plus Nutrition5k identification (`images.n5k.json`) and `coach.json` / `cite.json`.",
-        "The VLM extracts name, brand, quantity, and unit. Calories are MiniSearch + convert_portion on the host-mapped USDA row, not model-invented numbers.",
+        "Same 20% Nutrition5k test (409 plates, seed `opencal-n5k-eval-v2`).",
+        "The VLM only names foods and household portions. Calories and macros come from the host USDA map + `convert_portion`.",
+        "Gold is Nutrition5k **dish totals** (weighed ingredients: kcal, protein, carbs, fat) — not a household USDA guess and not name accuracy.",
         "",
-        "## Meal calories (primary)",
+        "## Why these metrics",
         "",
-        block("Baseline", b_all),
+        "- **MAE** is mean |pred − gold| in kcal or grams. This is the number that matters for a diary.",
+        "- **WAPE** is total absolute error / total gold across the set. Unlike mean % error, a 5 kcal snack does not explode the score.",
+        "- **Median relative error** is the typical plate’s |pred − gold| / gold.",
+        "- **Within 20% / 50%** is how often the logged meal is close enough to be useful.",
         "",
+        "## Nutrition5k 20% (primary)",
+        "",
+        *change_table(b_n5k, a_n5k),
+        "",
+        "## kcal by slice",
+        "",
+        *kcal_table(
+            before,
+            after,
+            [
+                ("N5k 20%", "n5k"),
+                ("N5k singles", "n5kSingles"),
+                ("N5k mixed", "n5kMixed"),
+                ("Fixtures", "fixture"),
+                ("Text", "text"),
+            ],
+        ),
+        "",
+        "## Macros on the 20% image test",
+        "",
+        *macro_table(before, after, "n5k"),
+        "",
+        "## What this means",
+        "",
+        "The original model is not a calorie estimator. It counts pieces and the host maps those to full USDA servings, so a handful of almonds becomes thousands of kcal. Fine-tuning is the difference between unusable and in-the-ballpark.",
+        "",
+        "The fine-tune is still not accurate enough to trust as a food scale. Median plate is off by ~87% relative, and only about 9% of meals ≥50 kcal land within 20% of the weighed dish. The leftover error is portion size: the model emits household units (1 apple, 1 slice) while Nutrition5k gold is grams on the scale, including oil the camera barely sees.",
+        "",
+        "Name accuracy is not the product metric. A correctly named food with the wrong portion is still a wrong diary entry.",
     ]
-    if v1:
-        lines += [block("Fine-tuned v1", v1["summary"]["all"]), ""]
-    lines += [
-        block("Fine-tuned", a_all),
-        "",
-        "| metric | baseline | fine-tuned | change |",
-        "|---|---:|---:|---|",
-        f"| name acc | {pct(b_all['namedAcc'])} | {pct(a_all['namedAcc'])} | {delta(b_all['namedAcc'], a_all['namedAcc'])} |",
-        f"| kcal MAE | {b_all['kcalMae']:.1f} | {a_all['kcalMae']:.1f} | {delta(b_all['kcalMae'], a_all['kcalMae'], True)} |",
-        f"| kcal median AE | {b_all['kcalMdae']:.1f} | {a_all['kcalMdae']:.1f} | {delta(b_all['kcalMdae'], a_all['kcalMdae'], True)} |",
-        f"| within 20% | {pct(b_all['within20'])} | {pct(a_all['within20'])} | {delta(b_all['within20'], a_all['within20'])} |",
-        f"| within 50% | {pct(b_all['within50'])} | {pct(a_all['within50'])} | {delta(b_all['within50'], a_all['within50'])} |",
-        "",
-    ]
-    if v1:
-        v1_all = v1["summary"]["all"]
-        lines += [
-            "v1 vs this run (same held-out split):",
-            "",
-            "| metric | v1 | this run | change |",
-            "|---|---:|---:|---|",
-            f"| name acc | {pct(v1_all['namedAcc'])} | {pct(a_all['namedAcc'])} | {delta(v1_all['namedAcc'], a_all['namedAcc'])} |",
-            f"| kcal MAE | {v1_all['kcalMae']:.1f} | {a_all['kcalMae']:.1f} | {delta(v1_all['kcalMae'], a_all['kcalMae'], True)} |",
-            "",
-        ]
-    lines += [
-        "## Text vs images",
-        "",
-        block("Baseline text", before["summary"]["text"]),
-    ]
-    if v1:
-        lines.append(block("Fine-tuned v1 text", v1["summary"]["text"]))
-    lines += [
-        block("Fine-tuned text", after["summary"]["text"]),
-        block("Baseline images", before["summary"]["image"]),
-    ]
-    if v1:
-        lines.append(block("Fine-tuned v1 images", v1["summary"]["image"]))
-    lines.append(block("Fine-tuned images", after["summary"]["image"]))
-    if coach_b and coach_a:
-        lines += [
-            "",
-            "## Coach (don't forget how to talk)",
-            "",
-            "| metric | baseline | fine-tuned | change |",
-            "|---|---:|---:|---|",
-            f"| overall | {pct(coach_b['pass'])} | {pct(coach_a['pass'])} | {delta(coach_b['pass'], coach_a['pass'])} |",
-            f"| log → JSON | {pct(coach_b['jsonAcc'])} | {pct(coach_a['jsonAcc'])} | {delta(coach_b['jsonAcc'], coach_a['jsonAcc'])} |",
-            f"| chat/Q → prose | {pct(coach_b['proseAcc'])} | {pct(coach_a['proseAcc'])} | {delta(coach_b['proseAcc'], coach_a['proseAcc'])} |",
-            f"| USDA kcal in range | {pct(coach_b['kcalInRange'])} | {pct(coach_a['kcalInRange'])} | {delta(coach_b['kcalInRange'], coach_a['kcalInRange'])} |",
-            "",
-            "Eval infer uses the same `{\"foods\":[` assistant prefix as the PWA.",
-            "Text MAE applies the same refineExtracted host pass as the PWA (bare eggs → large, compound names).",
-            "Production no longer asks the VLM to pick a USDA letter; the host maps extract JSON to a base food.",
-            "`fix-eggs` gold is 2 large eggs (185 kcal) while the photo is a mixed plate;",
-            "the model emits JSON for egg plus sides, which inflates image MAE vs that eggs-only label.",
-            "Image identification (name accuracy) is the vision metric; banana count is the clean fixture calorie check.",
-            "If MiniSearch cannot map the extracted name, the host leaves the diary unmatched (0 kcal).",
-        ]
-    pick_after = ROOT / "evals/data/finetune/preds/finetuned/pick.json"
-    if pick_after.exists():
-        picks = load(pick_after)
-        n = len(picks)
-        ok = sum(1 for r in picks if r.get("ok"))
-        none_n = sum(1 for r in picks if r.get("expect") is None)
-        none_ok = sum(1 for r in picks if r.get("expect") is None and r.get("ok"))
-        lines += [
-            "",
-            "## Pick / refuse (RAG)",
-            "",
-            f"Held-out `evals/splits/pick.json`: {ok}/{n} correct (debug only; not used in production).",
-            f"Refuse when the true USDA row is missing: {none_ok}/{none_n}.",
-            "Production maps extract → USDA on the host. Calories are never taken from the model.",
-        ]
-    cite_after = ROOT / "evals/data/finetune/preds/finetuned/cite.json"
-    if cite_after.exists():
-        cites = load(cite_after)
-        ok = sum(1 for r in cites if r.get("ok"))
-        lines += [
-            "",
-            "## Citation / refuse (coach)",
-            "",
-            f"Held-out `evals/splits/cite.json`: {ok}/{len(cites)} cite USDA/convert_portion or refuse without a row.",
-        ]
     Path(args.out).write_text("\n".join(lines) + "\n")
-    if coach_b and coach_a:
-        Path(args.out.replace(".md", "-coach.json")).write_text(
-            json.dumps({"before": coach_b, "after": coach_a}, indent=2) + "\n"
-        )
     print("\n".join(lines))
     print(f"\nwrote {args.out}")
 

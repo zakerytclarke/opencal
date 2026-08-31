@@ -1,5 +1,5 @@
 import { entryFromFood, getFood, bestMatch } from '../../src/lib/foods.ts'
-import type { ExpectItem, ImageCase } from './types.ts'
+import type { ExpectItem, ImageCase, MealNutrition } from './types.ts'
 
 export function goldEntry(item: ExpectItem) {
   const food = (item.foodId ? getFood(item.foodId) : null) ?? bestMatch(item.query)
@@ -29,8 +29,29 @@ export function goldEntry(item: ExpectItem) {
   }
 }
 
+export function goldMealNutrition(items: ExpectItem[]): MealNutrition {
+  return items.reduce(
+    (sum, item) => {
+      const g = goldEntry(item)
+      return {
+        kcal: sum.kcal + g.kcal,
+        protein: sum.protein + g.protein,
+        carbs: sum.carbs + g.carbs,
+        fat: sum.fat + g.fat,
+      }
+    },
+    { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+  )
+}
+
 export function goldMealKcal(items: ExpectItem[]): number {
-  return items.reduce((sum, item) => sum + goldEntry(item).kcal, 0)
+  return goldMealNutrition(items).kcal
+}
+
+/** Prefer dataset dish totals (Nutrition5k lab) when present; otherwise USDA-mapped expect items. */
+export function caseNutrition(row: ImageCase, items: ExpectItem[]): MealNutrition {
+  if (row.nutrition) return row.nutrition
+  return goldMealNutrition(items)
 }
 
 /** Single-food FooDD/fixture rows, or multi-ingredient Nutrition5k `expect`. */
