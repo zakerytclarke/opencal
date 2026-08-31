@@ -3,6 +3,7 @@ import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  base: process.env.GITHUB_PAGES === '1' ? '/opencal/' : '/',
   plugins: [
     react(),
     VitePWA({
@@ -16,7 +17,7 @@ export default defineConfig({
         background_color: '#0F1419',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
+        start_url: './',
         icons: [
           {
             src: 'favicon.svg',

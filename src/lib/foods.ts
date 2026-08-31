@@ -15,7 +15,8 @@ export async function loadFoods(): Promise<Food[]> {
   if (foods.length) return foods
   if (loadPromise) return loadPromise
   loadPromise = (async () => {
-    const res = await fetch('/foods.json')
+    const base = import.meta.env?.BASE_URL ?? '/'
+    const res = await fetch(`${base}foods.json`)
     if (!res.ok) throw new Error('Could not load the food database')
     const data = (await res.json()) as FoodFile
     foods = data.foods
