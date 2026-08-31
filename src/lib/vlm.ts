@@ -1,5 +1,13 @@
 import { extractFoods } from './extract'
-import type { ExtractedItem } from '../types'
+import type { DebugPath, ExtractedItem } from '../types'
+
+export type AnalyzeResult = {
+  raw: string
+  items: ExtractedItem[]
+  path: DebugPath
+  error?: string
+  ms: number
+}
 
 export const VLM_ID = 'onnx-community/LFM2.5-VL-450M-ONNX'
 
@@ -224,45 +232,82 @@ async function decodeGeneration(
   return String(decoded ?? '').trim()
 }
 
-export async function analyzeMealPhoto(image: Blob, onProgress?: ProgressFn): Promise<{ raw: string; items: ExtractedItem[] }> {
-  const sess = await loadSession(onProgress)
-  onProgress?.('Reading the photo…', 82)
-  const url = URL.createObjectURL(image)
+export async function analyzeMealPhoto(image: Blob, onProgress?: ProgressFn): Promise<AnalyzeResult> {
+  const started = performance.now()
   try {
-    const img = await sess.loadImage(url)
-    const messages = [
-      { role: 'system', content: SYSTEM },
-      {
-        role: 'user',
-        content: [
-          { type: 'image' },
-          { type: 'text', text: PHOTO_USER },
-        ],
-      },
-    ]
-    const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true })
-    const inputs = await sess.runProcessor(img, prompt)
-    onProgress?.('Finding foods…', 88)
-    const raw = await decodeGeneration(sess, inputs)
-    onProgress?.('Matching the local database…', 94)
-    return { raw, items: itemsFromModelText(raw) }
-  } finally {
-    URL.revokeObjectURL(url)
+    const sess = await loadSession(onProgress)
+    onProgress?.('Reading the photo…', 82)
+    const url = URL.createObjectURL(image)
+    try {
+      const img = await sess.loadImage(url)
+      const messages = [
+        { role: 'system', content: SYSTEM },
+        {
+          role: 'user',
+          content: [
+            { type: 'image' },
+            { type: 'text', text: PHOTO_USER },
+          ],
+        },
+      ]
+      const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true })
+      const inputs = await sess.runProcessor(img, prompt)
+      onProgress?.('Finding foods…', 88)
+      const raw = await decodeGeneration(sess, inputs)
+      onProgress?.('Matching the local database…', 94)
+      const items = itemsFromModelText(raw)
+      const usedModel = parseToolCalls(raw).length > 0
+      return {
+        raw,
+        items: items.length ? items : extractFoods(raw),
+        path: usedModel ? 'vlm' : 'vlm-empty',
+        ms: Math.round(performance.now() - started),
+      }
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return {
+      raw: '',
+      items: [],
+      path: 'error-fallback',
+      error: message,
+      ms: Math.round(performance.now() - started),
+    }
   }
 }
 
-export async function analyzeMealText(text: string, onProgress?: ProgressFn): Promise<{ raw: string; items: ExtractedItem[] }> {
-  const sess = await loadSession(onProgress)
-  onProgress?.('Reading your log…', 82)
-  const messages = [
-    { role: 'system', content: SYSTEM },
-    { role: 'user', content: `Log this meal using search_foods tool calls:\n${text}` },
-  ]
-  const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true })
-  const inputs = await sess.runText(prompt)
-  onProgress?.('Finding foods…', 88)
-  const raw = await decodeGeneration(sess, inputs)
-  onProgress?.('Matching the local database…', 94)
-  const items = itemsFromModelText(raw)
-  return { raw, items: items.length ? items : extractFoods(text) }
+export async function analyzeMealText(text: string, onProgress?: ProgressFn): Promise<AnalyzeResult> {
+  const started = performance.now()
+  try {
+    const sess = await loadSession(onProgress)
+    onProgress?.('Running LFM2.5-VL…', 82)
+    const messages = [
+      { role: 'system', content: SYSTEM },
+      { role: 'user', content: `Log this meal using search_foods tool calls:\n${text}` },
+    ]
+    const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true })
+    const inputs = await sess.runText(prompt)
+    onProgress?.('Finding foods…', 88)
+    const raw = await decodeGeneration(sess, inputs)
+    onProgress?.('Matching the local database…', 94)
+    const usedModel = parseToolCalls(raw).length > 0
+    const items = itemsFromModelText(raw)
+    return {
+      raw,
+      items: items.length ? items : extractFoods(text),
+      path: usedModel ? 'vlm' : 'vlm-empty',
+      ms: Math.round(performance.now() - started),
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return {
+      raw: '',
+      items: extractFoods(text),
+      path: 'error-fallback',
+      error: message,
+      ms: Math.round(performance.now() - started),
+    }
+  }
 }

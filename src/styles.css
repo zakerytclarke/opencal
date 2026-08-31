@@ -146,6 +146,25 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 .foods-card { padding: 8px 8px 12px; }
 .foods-head { padding: 8px 8px 4px; }
 .foods-head h2 { font-size: 18px; }
+.foods-actions { display: flex; gap: 12px; align-items: center; }
+.foods-actions .is-on { color: #fbbf24; }
+.food-batch { border-bottom: 1px solid var(--divider); padding-bottom: 8px; margin-bottom: 8px; }
+.food-batch:last-child { border-bottom: 0; margin-bottom: 0; }
+.debug-block { margin: 8px 8px 10px; padding: 10px 12px; border-radius: 12px; background: #11161c; border: 1px solid #2a2f37; text-align: left; }
+.debug-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mute); margin-bottom: 8px; }
+.debug-pill { padding: 2px 7px; border-radius: 99px; background: var(--surface-2); color: var(--slate); }
+.debug-pill.is-vlm { background: #143d2a; color: #34d399; }
+.debug-pill.is-vlm-empty { background: #3b2f12; color: #fbbf24; }
+.debug-pill.is-error-fallback { background: #3f1d1d; color: #fca5a5; }
+.debug-pill.is-quick { background: var(--sky); color: #93c5fd; }
+.debug-input { margin: 0 0 8px; color: var(--slate); font-size: 13px; }
+.debug-input b { color: var(--mute); margin-right: 6px; }
+.debug-raw {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; line-height: 1.45; color: #e5e7eb; max-height: 160px; overflow: auto;
+}
+.debug-error { margin: 8px 0 0; color: #fca5a5; font-size: 12px; }
 .food-row, .result {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 8px; border: 0; background: transparent; text-align: left;
   border-bottom: 1px solid var(--divider);

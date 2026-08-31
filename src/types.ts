@@ -47,6 +47,8 @@ export type FoodFile = {
   foods: Food[]
 }
 
+export type DebugPath = 'vlm' | 'vlm-empty' | 'extractor' | 'quick' | 'error-fallback'
+
 export type LogEntry = {
   id: string
   date: string
@@ -62,6 +64,12 @@ export type LogEntry = {
   fat: number
   source: 'search' | 'voice' | 'photo' | 'quick' | 'sentence'
   loggedAt: string
+  batchId?: string
+  debugInput?: string
+  debugRaw?: string
+  debugPath?: DebugPath
+  debugError?: string
+  debugMs?: number
 }
 
 export type Diary = Record<string, LogEntry[]>

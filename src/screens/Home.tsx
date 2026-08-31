@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { BottomBar } from '../components/BottomBar'
+import { FoodBatchCard } from '../components/FoodBatch'
 import { VlmStatusBar } from '../components/VlmStatus'
 import { CalorieRing } from '../components/CalorieRing'
-import { FoodRow } from '../components/FoodRow'
 import { MacroBars } from '../components/MacroBars'
 import { WeekStrip } from '../components/WeekStrip'
+import { groupBatches } from '../lib/batches'
 import { totals } from '../lib/diary'
 import { foodCount } from '../lib/foods'
 import { prettyDate, weekKeys } from '../lib/dates'
@@ -33,7 +35,9 @@ export function Home({
   onPhoto,
   onReset,
 }: Props) {
+  const [debug, setDebug] = useState(true)
   const entries = diary[date] ?? []
+  const batches = groupBatches(entries)
   const t = totals(entries)
   const keys = weekKeys(date)
   const logged = new Set(keys.filter((k) => (diary[k] ?? []).length > 0))
@@ -88,14 +92,19 @@ export function Home({
       <section className="card foods-card">
         <div className="foods-head">
           <h2>Foods</h2>
-          <button type="button" className="text-btn" onClick={onSearch}>
-            Add
-          </button>
+          <div className="foods-actions">
+            <button type="button" className={`text-btn${debug ? ' is-on' : ''}`} onClick={() => setDebug((v) => !v)}>
+              Debug {debug ? 'on' : 'off'}
+            </button>
+            <button type="button" className="text-btn" onClick={onSearch}>
+              Add
+            </button>
+          </div>
         </div>
         {entries.length === 0 ? (
           <p className="empty">Nothing logged yet. Search, speak, or snap a photo.</p>
         ) : (
-          entries.map((e) => <FoodRow key={e.id} entry={e} onDelete={onDelete} />)
+          batches.map((batch) => <FoodBatchCard key={batch.id} batch={batch} debug={debug} onDelete={onDelete} />)
         )}
       </section>
 
