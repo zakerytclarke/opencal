@@ -2,7 +2,7 @@
 
 Local train/test harness for OpenCal. It runs the **same** `logFromText` / `logFromPhoto` path as the app (LFM on-device + USDA MiniSearch), then scores names and calories against gold.
 
-Gold calories are **USDA via our food database** for the labeled food and serving — the number a user would see in the diary. The VLM extracts **name, brand, quantity, and unit**; the host maps that to a USDA row and runs `convert_portion`. FooDD supplies image class labels (and a per-100g table in `taxonomy/foodd.json`). Nutrition5k identification plates (`images.n5k.json`) cover the same classes when FooDD is not on disk. Train is for prompt/few-shot tuning; do not put test strings into `EXTRACT_FEWSHOT`.
+Gold calories are **USDA via our food database** for the labeled food and serving — the number a user would see in the diary. Logging is two stages: the VLM names search keywords, the host RAG-looks up catalog rows, then the VLM sees the original meal or photo plus that catalog and emits **name, brand, quantity, and unit**. The host maps that to a USDA row and runs `convert_portion`. FooDD supplies image class labels (and a per-100g table in `taxonomy/foodd.json`). Nutrition5k identification plates (`images.n5k.json`) cover the same classes when FooDD is not on disk. Train is for prompt/few-shot tuning; do not put test strings into `EXTRACT_FEWSHOT`.
 
 ## Splits
 

@@ -13,6 +13,16 @@ declare global {
       warmupVlm: () => void
       extractMealText: (text: string) => Promise<AnalyzeResult>
       extractMealPhoto: (image: Blob) => Promise<AnalyzeResult>
+      estimateTextPortions: (
+        meal: string,
+        names: string[],
+        lines: string[],
+      ) => Promise<AnalyzeResult>
+      estimatePhotoPortions: (
+        image: Blob,
+        names: string[],
+        lines: string[],
+      ) => Promise<AnalyzeResult>
       pickFoodMatch: (
         meal: string,
         item: ExtractedItem,

@@ -463,7 +463,7 @@ export type PhotoCatalog = {
   entries: PhotoCatalogEntry[]
 }
 
-/** Food-db records shown to the photo portion step. No letters — the model copies name + household unit. */
+/** Food-db records shown to the portion step (text or photo). No letters — the model copies name + household unit. */
 export function photoCatalog(items: ExtractedItem[], hitsPerFood = 3): PhotoCatalog {
   const names: string[] = []
   const lines: string[] = []

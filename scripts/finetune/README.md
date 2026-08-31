@@ -2,17 +2,18 @@
 
 Target: `LiquidAI/LFM2.5-VL-450M` (same family as the in-app ONNX build).
 Photo path: **identify names/brands** → host USDA RAG (serving grams) → **portion JSON** (name, brand, quantity, unit) → `convert_portion`.
+Text path is the same two stages: keywords only, then original meal + catalog → foods/ingredients.
 Primary metric: **calorie MAPE on Nutrition5k meals ≥50 kcal**, plus WAPE. Target: MAPE **< 30%**. Name accuracy is secondary.
-The model extracts name, brand, quantity, and unit. It must not invent calories or pick a catalog letter. Coach mix keeps chat/Q&A with USDA citations.
+The model must not invent calories or pick a catalog letter. Coach mix keeps chat/Q&A with USDA citations.
 
 ## Datasets
 
 | Mix | What | Gold |
 | --- | --- | --- |
-| USDA synth | Spoken meals from `public/foods.json`, forced unit mix (slice, oz, cup, tbsp, …) | Extract JSON |
-| Combos | "X with Y and Z" stays three foods | Extract JSON |
-| Curriculum | Hand-written units + restaurant bowls + sides | Extract JSON |
-| OpenCal train split | `evals/splits/text.json` train only | Extract JSON |
+| USDA synth | Spoken meals from `public/foods.json`, forced unit mix (slice, oz, cup, tbsp, …) | Identify JSON + portion JSON |
+| Combos | "X with Y and Z" stays three foods | Identify JSON + portion JSON |
+| Curriculum | Hand-written units + restaurant bowls + sides | Identify JSON + portion JSON |
+| OpenCal train split | `evals/splits/text.json` train only | Identify JSON + portion JSON |
 | Nutrition5k | Local HF cache plates + `metadata.jsonl` (held-out `images.n5k.json` IDs skipped) | Ingredient list |
 | Fixture photos | `pizza.jpg` / `bowl.jpg` only — never `banana.jpg` / `eggs.jpg` | Multi-item JSON |
 | Coach | USDA Q&A, refuse-to-guess, small talk, log-routing | Prose or JSON |

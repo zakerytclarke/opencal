@@ -10,7 +10,7 @@ import {
   type PhotoCatalog,
 } from './foods'
 import { uid } from './storage'
-import { estimatePhotoPortions, extractMealPhoto, extractMealText } from './vlm'
+import { estimatePhotoPortions, estimateTextPortions, extractMealPhoto, extractMealText } from './vlm'
 import type { DebugPath, ExtractedItem, Food, LogEntry } from '../types'
 
 export type JobProgress = {
@@ -107,7 +107,7 @@ async function resolveItems(
     const item = items[i]
     const pct = 28 + Math.round(((i + 0.2) / n) * 68)
     handlers.onProgress?.({ message: `Looking up USDA for ${item.query}…`, pct })
-    const catalogFoods = source === 'photo' ? catalogHitsFor(item, catalog) : undefined
+    const catalogFoods = catalogHitsFor(item, catalog)
     const result = matchOne(meal, item, date, source, source === 'photo' ? items.length : 1, catalogFoods)
 
     const entry = stamp(result.entry, {
@@ -155,17 +155,29 @@ export async function logFromText(
 
   handlers.onProgress?.({ message: 'Finding foods…', pct: 8 })
   const extracted = await extractMealText(text, (message, pct) => {
-    handlers.onProgress?.({ message, pct: pct != null ? Math.min(26, pct * 0.26) : 12 })
+    handlers.onProgress?.({ message, pct: pct != null ? Math.min(22, pct * 0.22) : 12 })
   })
-  const rawItems = extracted.items.length ? extracted.items : extractFoods(text)
-  const items = refineExtracted(rawItems, text)
-  handlers.onExtracted?.(items)
+  const named = extracted.items.length ? extracted.items : extractFoods(text)
   handlers.onProgress?.({
-    message: items.length ? `Found ${items.length} food${items.length === 1 ? '' : 's'}` : 'No foods found',
-    pct: 28,
+    message: named.length ? `Found ${named.length} food${named.length === 1 ? '' : 's'}` : 'No foods found',
+    pct: 24,
   })
-  if (!items.length) return []
-  return resolveItems(text, items, date, source, batchId, extracted.raw, extracted.path, extracted.error, handlers)
+  if (!named.length) {
+    handlers.onExtracted?.([])
+    return []
+  }
+
+  const catalog = photoCatalog(named)
+  handlers.onProgress?.({ message: 'Looking up USDA servings…', pct: 32 })
+  const portioned = await estimateTextPortions(text, catalog.names, catalog.lines, (message, pct) => {
+    handlers.onProgress?.({ message, pct: pct != null ? 32 + Math.min(20, pct * 0.2) : 40 })
+  })
+  const items = portioned.items.length ? portioned.items : refineExtracted(named, text)
+  handlers.onExtracted?.(items)
+  const extractRaw = [extracted.raw, portioned.raw].filter(Boolean).join('\n---\n')
+  const extractError = extracted.error || portioned.error
+  const extractPath = portioned.items.length ? portioned.path : extracted.path
+  return resolveItems(text, items, date, source, batchId, extractRaw, extractPath, extractError, handlers, catalog)
 }
 
 export async function logFromPhoto(image: Blob, date: string, handlers: JobHandlers = {}): Promise<LogEntry[]> {

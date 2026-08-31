@@ -10,6 +10,7 @@ import {
   PHOTO_PORTION_SYSTEM,
   PICK_PREFIX,
   PICK_SYSTEM,
+  TEXT_PORTION_SYSTEM,
   extractUserPrompt,
   formatChatPrompt,
   parseExtractedFoods,
@@ -17,6 +18,7 @@ import {
   photoPortionUser,
   pickUserPrompt,
   stripSpecialTokens,
+  textPortionUser,
   type PickDecision,
 } from './vlmParse'
 
@@ -386,6 +388,63 @@ export async function extractMealPhoto(image: Blob, onProgress?: ProgressFn): Pr
   }
 }
 
+export async function estimateTextPortions(
+  meal: string,
+  names: string[],
+  lines: string[],
+  onProgress?: ProgressFn,
+): Promise<AnalyzeResult> {
+  const started = performance.now()
+  const user = textPortionUser(meal, names, lines)
+  try {
+    if ((await detectBackend()) === 'http') {
+      onProgress?.('Matching catalog servings…', 40)
+      const r = await fetch('/vlm/portion-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: meal, catalog: user }),
+      })
+      const data = (await r.json()) as { raw?: string }
+      const raw = data.raw ?? ''
+      const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
+      const items = parseExtractedFoods(labeled, meal)
+      return {
+        raw: stripSpecialTokens(labeled) || labeled,
+        items,
+        path: items.length ? 'vlm' : 'vlm-empty',
+        ms: Math.round(performance.now() - started),
+      }
+    }
+    onProgress?.('Matching catalog servings…', 40)
+    const prompt = formatChatPrompt(
+      [
+        { role: 'system', content: TEXT_PORTION_SYSTEM },
+        { role: 'user', content: user },
+      ],
+      true,
+      EXTRACT_PREFIX,
+    )
+    const raw = await completeText(prompt, 280, onProgress)
+    const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
+    const items = parseExtractedFoods(labeled, meal)
+    return {
+      raw: stripSpecialTokens(labeled) || labeled,
+      items,
+      path: items.length ? 'vlm' : 'vlm-empty',
+      ms: Math.round(performance.now() - started),
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return {
+      raw: '',
+      items: [],
+      path: 'error-fallback',
+      error: message,
+      ms: Math.round(performance.now() - started),
+    }
+  }
+}
+
 export async function estimatePhotoPortions(
   image: Blob,
   names: string[],
@@ -521,6 +580,7 @@ if (typeof window !== 'undefined') {
       warmupVlm,
       extractMealText,
       extractMealPhoto,
+      estimateTextPortions,
       estimatePhotoPortions,
       pickFoodMatch,
       convertPortion,

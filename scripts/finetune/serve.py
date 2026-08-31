@@ -33,6 +33,7 @@ from prompts import (  # noqa: E402
     PICK_NONE_LINE,
     PICK_SYSTEM,
     PICK_USER_TAIL,
+    TEXT_PORTION_SYSTEM,
 )
 
 DEFAULT_CKPT = ROOT / "evals" / "data" / "finetune" / "ckpts" / "lfm25vl-opencal"
@@ -92,6 +93,15 @@ def portion_photo(image: Image.Image, catalog: str) -> dict:
                 {"type": "text", "text": catalog},
             ],
         },
+    ]
+    raw = generate(MODEL, PROCESSOR, messages, 280, DEVICE, EXTRACT_PREFIX)
+    return {"raw": raw, "items": parse_foods(raw)}
+
+
+def portion_text(catalog: str) -> dict:
+    messages = [
+        {"role": "system", "content": [{"type": "text", "text": TEXT_PORTION_SYSTEM}]},
+        {"role": "user", "content": [{"type": "text", "text": catalog}]},
     ]
     raw = generate(MODEL, PROCESSOR, messages, 280, DEVICE, EXTRACT_PREFIX)
     return {"raw": raw, "items": parse_foods(raw)}
@@ -160,6 +170,11 @@ class Handler(BaseHTTPRequestHandler):
             if path in {"/extract-text", "/vlm/extract-text"}:
                 payload = json.loads(raw.decode() or "{}")
                 self._json(200, extract_text(str(payload.get("text") or payload.get("meal") or "")))
+                return
+            if path in {"/portion-text", "/vlm/portion-text"}:
+                payload = json.loads(raw.decode() or "{}")
+                catalog = str(payload.get("catalog") or payload.get("text") or payload.get("meal") or "")
+                self._json(200, portion_text(catalog))
                 return
             if path in {"/pick", "/vlm/pick"}:
                 payload = json.loads(raw.decode() or "{}")

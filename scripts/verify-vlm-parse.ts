@@ -1,5 +1,5 @@
 import { extractFoods, isQuickCalorie, refineExtracted } from '../src/lib/extract.ts'
-import { EXTRACT_SYSTEM, PHOTO_EXTRACT_SYSTEM, PHOTO_PORTION_SYSTEM, PICK_SYSTEM, formatChatPrompt, parseExtractedFoods, parsePick, pickUserPrompt } from '../src/lib/vlmParse.ts'
+import { EXTRACT_SYSTEM, PHOTO_EXTRACT_SYSTEM, PHOTO_PORTION_SYSTEM, PICK_SYSTEM, TEXT_PORTION_SYSTEM, formatChatPrompt, parseExtractedFoods, parsePick, pickUserPrompt, textPortionUser } from '../src/lib/vlmParse.ts'
 
 type Row = {
   id: number
@@ -449,20 +449,18 @@ const rows: Row[] = [
   {
     id: 30,
     kind: 'text',
-    name: 'Extract prompt forbids invented grams and calories',
+    name: 'Extract prompt is keywords only; portions come after RAG',
     input: EXTRACT_SYSTEM,
-    expect: 'convert_portion · no invented calories',
+    expect: 'names + brands, no quantity',
     run() {
       const s = EXTRACT_SYSTEM
       return {
         pass:
-          /convert_portion/.test(s) &&
-          /scale_nutrition/.test(s) &&
-          /do not convert units/i.test(s) &&
-          /invent calories/i.test(s) &&
-          /host maps name and brand/i.test(s) &&
-          /catalog letter/i.test(s),
-        got: /host maps/i.test(s) ? 'host maps + tools' : 'missing host map',
+          /search the food database/i.test(s) &&
+          /do not output quantity, unit, grams, or calories/i.test(s) &&
+          /second step reads the original meal/i.test(s) &&
+          !/"quantity"/.test(s),
+        got: /do not output quantity/i.test(s) ? 'identify only' : 'still asks for quantity',
       }
     },
   },
@@ -525,6 +523,48 @@ const rows: Row[] = [
           /do not invent calories/i.test(s) &&
           /convert_portion/.test(s),
         got: /do not pick a letter/i.test(s) ? 'match record · no letter' : 'still letter pick or missing match',
+      }
+    },
+  },
+  {
+    id: 34,
+    kind: 'text',
+    name: 'Text portion sees original meal plus RAG catalog',
+    input: TEXT_PORTION_SYSTEM,
+    expect: 'meal + catalog → name+qty+unit, no letter pick',
+    run() {
+      const s = TEXT_PORTION_SYSTEM
+      const user = textPortionUser('2 eggs and a banana', ['eggs', 'banana'], [
+        '- eggs: Egg, whole, cooked, hard-boiled · 1 large (50 g)',
+        '- banana: Bananas, raw · 1 medium (118 g)',
+      ])
+      return {
+        pass:
+          /original meal/i.test(s) &&
+          /copy the household unit/i.test(s) &&
+          /do not pick a letter/i.test(s) &&
+          /do not invent calories/i.test(s) &&
+          /convert_portion/.test(s) &&
+          /2 eggs and a banana/.test(user) &&
+          /Named foods: eggs, banana/.test(user) &&
+          /1 large \(50 g\)/.test(user),
+        got: /2 eggs and a banana/.test(user) && /do not pick a letter/i.test(s)
+          ? 'meal + catalog, no letter'
+          : 'missing meal or letter pick',
+      }
+    },
+  },
+  {
+    id: 35,
+    kind: 'text',
+    name: 'Names-only extract JSON still parses',
+    input: '{"foods":[{"name":"eggs","brand":null},{"name":"banana","brand":null}]}',
+    expect: 'eggs · banana',
+    run() {
+      const items = parseExtractedFoods(this.input)
+      return {
+        pass: items.length === 2 && /egg/i.test(items[0].query) && /banana/i.test(items[1].query),
+        got: foodsLine(items),
       }
     },
   },

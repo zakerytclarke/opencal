@@ -1,21 +1,19 @@
 """Production prompts — keep in sync with src/lib/vlmParse.ts."""
 
-EXTRACT_SYSTEM = """You extract every food and drink from a meal.
+EXTRACT_SYSTEM = """You name every food and drink in a meal so the host can search the food database.
 Reply with JSON only. No markdown, no prose.
 Format:
-{"foods":[{"name":"eggs","brand":null,"quantity":2,"unit":"large"},{"name":"banana","brand":null,"quantity":1,"unit":"medium"}]}
+{"foods":[{"name":"eggs","brand":null},{"name":"banana","brand":null}]}
 Rules:
 - One object per distinct edible item. Split combos (chicken bowl with rice → chicken, rice). Named sides stay separate (bowl with guacamole and beans → bowl, guacamole, beans).
-- If the user did not say small/medium/large, do not invent a size. A muffin/cookie/bagel with no size word uses unit muffin/cookie/bagel or null, not small. Bare eggs with no size word use unit large.
+- name is a short grocery search keyword.
+- brand is only set if the user named one, else null.
 - Keep compound grocery names: banana pepper is not banana, turkey bacon is not bacon, egg whites are not whole eggs.
-- name is a short grocery name.
-- brand is only set if the user or package named one, else null.
-- quantity is a number. unit is the household word the user said: large, medium, small, slice, cup, tbsp, tsp, oz, g, fl oz, bowl, handful, can, bottle, grande, tall, bar.
 - Fruit, drinks, snacks, and cooked dishes all count. Skip plates and utensils.
 - Only foods the user named. Never copy foods from examples.
-- Do not convert units, estimate grams, invent calories, or pick a catalog letter. The host maps name and brand to a USDA row, then convert_portion and scale_nutrition convert quantity and unit."""
+- Do not output quantity, unit, grams, or calories. The host looks up USDA rows next, then a second step reads the original meal and catalog and emits portions."""
 
-EXTRACT_USER = "Extract foods and household units from this meal. Do not convert units or invent calories.\n{meal}"
+EXTRACT_USER = "Name every food in this meal. Names and brands only. No quantity, grams, or calories. JSON only.\n{meal}"
 
 PHOTO_EXTRACT_SYSTEM = """You name every edible item clearly visible in the photo.
 Reply with JSON only, never a caption:
@@ -43,6 +41,22 @@ Rules:
 
 PHOTO_PORTION_USER_TAIL = "Look at the photo. For every visible food match a catalog record and emit name, brand, quantity, and that record's household unit. Do not pick a letter or invent calories. JSON only."
 
+TEXT_PORTION_SYSTEM = """You match each food in the meal to a USDA catalog record, then say how many of that record's household serving the user ate.
+The host already named the foods and looked up food-database rows. Each line is one record: food name, household serving, grams.
+You also have the original meal — use it for quantity and unit (2 eggs, half a cup, a tablespoon).
+Reply with JSON only:
+{"foods":[{"name":"eggs","brand":null,"quantity":2,"unit":"large"},{"name":"banana","brand":null,"quantity":1,"unit":"medium"},{"name":"peanut butter","brand":null,"quantity":1,"unit":"tbsp"}]}
+Rules:
+- One object per food the user named. name identifies the same food as a catalog record. brand is only if they named one, else null.
+- Copy the household unit from the catalog record you matched (medium, large, tbsp, cup, slice) unless the user said a different unit (oz, g, fl oz, cup). quantity is how many they ate (2, 0.5, 1).
+- If they did not say small/medium/large, do not invent a size. Bare eggs use the catalog's large serving. A muffin/cookie/bagel with no size word uses that record's muffin/cookie/bagel unit.
+- Do not pick a letter. Do not invent calories. The host finds the same catalog record from your name, quantity, and unit, then convert_portion computes grams and macros.
+- Only foods the user named. Never copy foods from examples."""
+
+TEXT_PORTION_USER_TAIL = "Read the meal. For every food match a catalog record and emit name, brand, quantity, and unit. Do not pick a letter or invent calories. JSON only."
+
+CATALOG_USER_HEADER = "Food database records (match one per food; copy its household unit; host will convert_portion):"
+
 PICK_SYSTEM = """You pick a local USDA nutrition reference row.
 Calories and grams are already computed by convert_portion from USDA per-100 g values and household weights. Do not invent numbers or change the portion.
 You are given the user's meal, this item, and lettered hits. Each hit includes convert_portion for this item's quantity and unit.
@@ -68,9 +82,23 @@ def photo_portion_user(names: list[str], lines: list[str]) -> str:
     return "\n".join(
         [
             f"Visible foods: {visible}",
-            "Food database records (match one per food; copy its household unit; host will convert_portion):",
+            CATALOG_USER_HEADER,
             *body,
             PHOTO_PORTION_USER_TAIL,
+        ]
+    )
+
+
+def text_portion_user(meal: str, names: list[str], lines: list[str]) -> str:
+    named = ", ".join(n for n in names if n) or "see meal"
+    body = lines or ["(no USDA rows)"]
+    return "\n".join(
+        [
+            f"Meal:\n{meal}",
+            f"Named foods: {named}",
+            CATALOG_USER_HEADER,
+            *body,
+            TEXT_PORTION_USER_TAIL,
         ]
     )
 

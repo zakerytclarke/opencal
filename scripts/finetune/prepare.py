@@ -10,8 +10,9 @@ Sources (calorie numbers always come from USDA rows or Nutrition5k USDA-linked l
   6. Coach / chat — USDA Q&A, refuse-to-guess, small talk so JSON does not wipe conversation
 
 The OpenCal text+image+coach TEST splits are frozen and never written into train JSONL.
-The VLM extracts name, brand, quantity, and unit. The host maps those to a USDA row
-and runs convert_portion. Lettered pick is not in the production mix.
+Text and photo both run two stages: extract search keywords (name, brand), host RAG,
+then emit name/brand/quantity/unit from the original meal or photo plus the catalog.
+The host maps those to a USDA row and runs convert_portion. Lettered pick is not in the production mix.
 """
 
 from __future__ import annotations
@@ -51,7 +52,9 @@ from prompts import (  # noqa: E402
     PICK_NONE_LINE,
     PICK_SYSTEM,
     PICK_USER_TAIL,
+    TEXT_PORTION_SYSTEM,
     photo_portion_user,
+    text_portion_user,
 )
 from rag import catalog_lines, search_foods  # noqa: E402
 
@@ -255,6 +258,20 @@ def sample_ok(user: str, banned: set[str]) -> bool:
     return norm(user) not in banned and len(user) >= 4
 
 
+def identify_from(foods: list[dict]) -> list[dict]:
+    out = []
+    for food in foods:
+        name = str(food.get("name") or "")
+        brand = food.get("brand")
+        out.append(
+            {
+                "name": name.lower() if name != name.upper() else name,
+                "brand": brand,
+            }
+        )
+    return out
+
+
 def extract_record(meal: str, foods: list[dict], source: str = "synth") -> dict:
     return {
         "task": "extract_text",
@@ -262,10 +279,40 @@ def extract_record(meal: str, foods: list[dict], source: str = "synth") -> dict:
         "messages": [
             {"role": "system", "content": EXTRACT_SYSTEM},
             {"role": "user", "content": EXTRACT_USER.format(meal=meal)},
+            {"role": "assistant", "content": json_foods(identify_from(foods))},
+        ],
+        "meta": {"meal": meal, "source": source},
+    }
+
+
+def portion_text_record(meal: str, foods: list[dict], catalog: list[str], source: str = "synth") -> dict:
+    names = [str(f.get("name") or "") for f in foods]
+    return {
+        "task": "portion_text",
+        "image": None,
+        "messages": [
+            {"role": "system", "content": TEXT_PORTION_SYSTEM},
+            {"role": "user", "content": text_portion_user(meal, names, catalog)},
             {"role": "assistant", "content": json_foods(foods)},
         ],
         "meta": {"meal": meal, "source": source},
     }
+
+
+def text_stages(
+    meal: str,
+    foods: list[dict],
+    catalog: list[dict],
+    source: str,
+    ident: str | None = None,
+) -> list[dict]:
+    names = [str(f.get("name") or "") for f in foods]
+    extract = extract_record(meal, foods, source)
+    portion = portion_text_record(meal, foods, catalog_lines(catalog, names), source)
+    if ident:
+        extract["meta"]["id"] = ident
+        portion["meta"]["id"] = f"{ident}-portion"
+    return [extract, portion]
 
 
 def item_from(name: str, qty: float, unit: str | None, brand: str | None = None) -> dict:
@@ -408,7 +455,8 @@ def build_synth(foods: list[dict], n: int, rng: random.Random, banned: set[str])
     compiled = [f for f in pool if f.get("source") == "compiled"]
     rows: list[dict] = []
     attempts = 0
-    while len(rows) < n and attempts < n * 30:
+    meals = 0
+    while meals < n and attempts < n * 30:
         attempts += 1
         k = rng.choices([1, 2, 3], weights=[45, 35, 20])[0]
         src = compiled if compiled and rng.random() < 0.3 else pool
@@ -422,7 +470,7 @@ def build_synth(foods: list[dict], n: int, rng: random.Random, banned: set[str])
         for i, food in enumerate(chosen):
             force = None
             if i == force_idx:
-                cycled = FORCE_UNITS[len(rows) % len(FORCE_UNITS)]
+                cycled = FORCE_UNITS[meals % len(FORCE_UNITS)]
                 house_u = parse_label(food.get("serveLabel") or "")[1]
                 if cycled in MASS_G or cycled in VOLUME_ML or cycled in NAMED_ML:
                     force = cycled
@@ -436,7 +484,8 @@ def build_synth(foods: list[dict], n: int, rng: random.Random, banned: set[str])
         meal = rng.choice(MEAL_TEMPLATES).format(items=join_bits(bits, rng))
         if not sample_ok(meal, banned):
             continue
-        rows.append(extract_record(meal, items, "synth"))
+        rows.extend(text_stages(meal, items, foods, "synth"))
+        meals += 1
     return rows
 
 
@@ -453,7 +502,8 @@ def build_combos(foods: list[dict], n: int, rng: random.Random, banned: set[str]
         "a {a} bowl with {b} and {c}",
     ]
     attempts = 0
-    while len(rows) < n and attempts < n * 20:
+    meals = 0
+    while meals < n and attempts < n * 20:
         attempts += 1
         src = compiled if rng.random() < 0.4 else pool
         if len(src) < 3:
@@ -467,11 +517,12 @@ def build_combos(foods: list[dict], n: int, rng: random.Random, banned: set[str]
         meal = re.sub(r"\ba a ", "a ", meal)
         if not sample_ok(meal, banned):
             continue
-        rows.append(extract_record(meal, [ia, ib, ic], "combo"))
+        rows.extend(text_stages(meal, [ia, ib, ic], foods, "combo"))
+        meals += 1
     return rows
 
 
-def build_curriculum(banned: set[str]) -> list[dict]:
+def build_curriculum(banned: set[str], catalog_foods: list[dict]) -> list[dict]:
     """Hand-written unit + combo examples. None of these strings are in the test split."""
     def foods(*triples):
         out = []
@@ -567,13 +618,11 @@ def build_curriculum(banned: set[str]) -> list[dict]:
     for meal, items in pairs:
         if not sample_ok(meal, banned):
             continue
-        rec = extract_record(meal, items, "curriculum")
-        rec["meta"]["id"] = f"curr-{len(rows)}"
-        rows.append(rec)
+        rows.extend(text_stages(meal, items, catalog_foods, "curriculum", f"curr-{len(rows) // 2}"))
     return rows
 
 
-def build_opencal_train(banned: set[str]) -> list[dict]:
+def build_opencal_train(banned: set[str], catalog_foods: list[dict]) -> list[dict]:
     splits = load_json(TEXT_SPLIT)
     rows = []
     for row in splits.get("train") or []:
@@ -589,9 +638,7 @@ def build_opencal_train(banned: set[str]) -> list[dict]:
                     "unit": exp["unit"],
                 }
             )
-        rec = extract_record(row["text"], foods, "opencal_train")
-        rec["meta"]["id"] = row["id"]
-        rows.append(rec)
+        rows.extend(text_stages(row["text"], foods, catalog_foods, "opencal_train", row["id"]))
     return rows
 
 
@@ -1340,8 +1387,8 @@ def main() -> None:
     print(f"catalog search foods: {len(catalog(foods))} · banned eval strings: {len(banned)}")
 
     parts = {
-        "opencal_train": build_opencal_train(banned),
-        "curriculum": build_curriculum(banned),
+        "opencal_train": build_opencal_train(banned, foods),
+        "curriculum": build_curriculum(banned, foods),
         "synth": build_synth(foods, args.synth, rng, banned),
         "combo": build_combos(foods, args.combo, rng, banned),
         "pick": build_pick(foods, args.pick, rng) if args.pick else [],

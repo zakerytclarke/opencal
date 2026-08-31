@@ -28,7 +28,9 @@ from prompts import (  # noqa: E402
     PICK_NONE_LINE,
     PICK_SYSTEM,
     PICK_USER_TAIL,
+    TEXT_PORTION_SYSTEM,
     photo_portion_user,
+    text_portion_user,
 )
 from rag import catalog_lines  # noqa: E402
 
@@ -243,7 +245,7 @@ def main() -> None:
     p.add_argument("--skip-images", action="store_true")
     p.add_argument("--skip-coach", action="store_true")
     p.add_argument("--skip-cite", action="store_true")
-    p.add_argument("--no-rag", action="store_true", help="Skip photo USDA catalog + portion pass")
+    p.add_argument("--no-rag", action="store_true", help="Skip USDA catalog + portion pass")
     args = p.parse_args()
 
     out_dir = Path(args.out) if args.out else ROOT / "evals" / "data" / "finetune" / "preds" / args.tag
@@ -272,6 +274,7 @@ def main() -> None:
         image_rows = image_rows[: args.limit]
 
     extracts = []
+    catalog = load_json(ROOT / "public/foods.json")["foods"]
     if not args.skip_text:
         for row in text_rows:
             messages = [
@@ -279,12 +282,34 @@ def main() -> None:
                 {"role": "user", "content": [{"type": "text", "text": EXTRACT_USER.format(meal=row["text"])}]},
             ]
             raw = generate(model, processor, messages, 220, device, EXTRACT_PREFIX)
-            items = parse_foods(raw)
-            extracts.append({"id": row["id"], "modality": "text", "raw": raw, "items": items, "text": row["text"]})
+            identified = parse_foods(raw)
+            items = identified
+            portion_raw = ""
+            if identified and not args.no_rag:
+                names = [str(it.get("name") or "") for it in identified]
+                lines = catalog_lines(catalog, names)
+                portion_user = text_portion_user(row["text"], names, lines)
+                portion_messages = [
+                    {"role": "system", "content": [{"type": "text", "text": TEXT_PORTION_SYSTEM}]},
+                    {"role": "user", "content": [{"type": "text", "text": portion_user}]},
+                ]
+                portion_raw = generate(model, processor, portion_messages, 280, device, EXTRACT_PREFIX)
+                portioned = parse_foods(portion_raw)
+                if portioned:
+                    items = portioned
+            extracts.append(
+                {
+                    "id": row["id"],
+                    "modality": "text",
+                    "raw": "\n---\n".join(x for x in (raw, portion_raw) if x),
+                    "items": items,
+                    "text": row["text"],
+                    "identified": identified,
+                }
+            )
             print(f"TEXT {row['id']} → {items or raw[:80]!r}", flush=True)
 
     if not args.skip_images:
-        catalog = load_json(ROOT / "public/foods.json")["foods"]
         for i, row in enumerate(image_rows, 1):
             path = ROOT / row["path"]
             if not path.exists():
