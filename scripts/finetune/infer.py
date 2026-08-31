@@ -23,6 +23,8 @@ from prompts import (  # noqa: E402
     PHOTO_EXTRACT_USER,
 )
 
+EXTRACT_PREFIX = '{"foods":['
+
 
 def load_json(path: Path):
     return json.loads(path.read_text())
@@ -65,11 +67,28 @@ def parse_foods(text: str) -> list[dict]:
             foods.append({"name": name, "brand": row.get("brand"), "quantity": qty, "unit": unit})
         if foods:
             return foods
-    return []
+    return parse_numbered(cleaned)
+
+
+def parse_numbered(text: str) -> list[dict]:
+    foods = []
+    for m in re.finditer(r"(?:^|\n)\s*(?:\d+[.)]\s+|[-*•]\s+)([^\n]+)", text):
+        name = re.sub(r"\s*\([^)]*\)\s*", " ", m.group(1)).strip()
+        if not name or len(name) > 48:
+            continue
+        if re.search(r"\b(background|plate|cutting board|table|utensil)\b", name, re.I):
+            continue
+        qty = 1.0
+        qm = re.match(r"^(\d+(?:\.\d+)?)\s+(.+)$", name)
+        if qm:
+            qty = float(qm.group(1))
+            name = qm.group(2)
+        foods.append({"name": name, "brand": None, "quantity": qty, "unit": None})
+    return foods
 
 
 @torch.inference_mode()
-def generate(model, processor, messages: list[dict], max_new: int, device) -> str:
+def generate(model, processor, messages: list[dict], max_new: int, device, prefix: str = "") -> str:
     encoded = processor.apply_chat_template(
         messages,
         add_generation_prompt=True,
@@ -78,6 +97,15 @@ def generate(model, processor, messages: list[dict], max_new: int, device) -> st
         return_tensors="pt",
     )
     encoded = {k: v.to(device) if torch.is_tensor(v) else v for k, v in encoded.items()}
+    if prefix:
+        tok = processor.tokenizer
+        extra = tok.encode(prefix, add_special_tokens=False, return_tensors="pt").to(device)
+        if extra.dim() == 1:
+            extra = extra.unsqueeze(0)
+        encoded["input_ids"] = torch.cat([encoded["input_ids"], extra], dim=1)
+        if "attention_mask" in encoded:
+            extra_mask = torch.ones(extra.shape, dtype=encoded["attention_mask"].dtype, device=device)
+            encoded["attention_mask"] = torch.cat([encoded["attention_mask"], extra_mask], dim=1)
     out = model.generate(
         **encoded,
         max_new_tokens=max_new,
@@ -86,7 +114,11 @@ def generate(model, processor, messages: list[dict], max_new: int, device) -> st
     )
     prompt_len = encoded["input_ids"].shape[-1]
     text = processor.batch_decode(out[:, prompt_len:], skip_special_tokens=True)[0]
-    return (text or "").strip()
+    text = (text or "").strip()
+    # Prefix tokens were already in the prompt; decode is only the continuation.
+    if prefix:
+        text = prefix + text
+    return text
 
 
 def main() -> None:
@@ -126,7 +158,7 @@ def main() -> None:
             {"role": "system", "content": [{"type": "text", "text": EXTRACT_SYSTEM}]},
             {"role": "user", "content": [{"type": "text", "text": EXTRACT_USER.format(meal=row["text"])}]},
         ]
-        raw = generate(model, processor, messages, 220, device)
+        raw = generate(model, processor, messages, 220, device, EXTRACT_PREFIX)
         items = parse_foods(raw)
         extracts.append({"id": row["id"], "modality": "text", "raw": raw, "items": items, "text": row["text"]})
         print(f"TEXT {row['id']} → {items or raw[:80]!r}", flush=True)
@@ -147,7 +179,7 @@ def main() -> None:
                 ],
             },
         ]
-        raw = generate(model, processor, messages, 220, device)
+        raw = generate(model, processor, messages, 220, device, EXTRACT_PREFIX)
         items = parse_foods(raw)
         extracts.append({"id": row["id"], "modality": "image", "raw": raw, "items": items, "path": row["path"]})
         print(f"IMAGE {row['id']} → {items or raw[:80]!r}", flush=True)

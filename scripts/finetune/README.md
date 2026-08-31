@@ -39,7 +39,7 @@ npx tsx scripts/eval/score-extracts.ts \
 /home/zclarke/ml_env/bin/python scripts/finetune/train.py --epochs 2 --batch 4 --lr 8e-6 \
   --resume evals/data/finetune/ckpts/lfm25vl-opencal
 
-# 4. After
+# 4. After. Infer uses the production {"foods":[ prefix.
 /home/zclarke/ml_env/bin/python scripts/finetune/infer.py \
   --model evals/data/finetune/ckpts/lfm25vl-opencal --tag finetuned
 npx tsx scripts/eval/score-extracts.ts \

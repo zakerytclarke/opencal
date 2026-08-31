@@ -508,7 +508,16 @@ def build_curriculum(banned: set[str]) -> list[dict]:
         ("a 16 fl oz latte", foods(("latte", 16, "fl oz"))),
         ("2 fried eggs and 2 slices of sourdough", foods(("fried eggs", 2, "large"), ("sourdough", 2, "slice"))),
         ("5 medium tangerines", foods(("tangerine", 5, "medium"))),
-        ("a can of black beans, drained", foods(("black beans", 1, "can"))),
+        ("two banana peppers", foods(("banana pepper", 2, None))),
+        ("a pickled jalapeno pepper", foods(("jalapeno pepper", 1, None))),
+        ("1 bell pepper", foods(("bell pepper", 1, None))),
+        ("4 slices of pork bacon and 3 eggs", foods(("pork bacon", 4, "slice"), ("eggs", 3, "large"))),
+        ("2 slices of canadian bacon and 2 fried eggs", foods(("canadian bacon", 2, "slice"), ("fried eggs", 2, "large"))),
+        ("turkey sausage and 2 eggs", foods(("turkey sausage", 1, "patty"), ("eggs", 2, "large"))),
+        ("3 slices of ham and two large eggs", foods(("ham", 3, "slice"), ("eggs", 2, "large"))),
+        ("please log 2 eggs with a slice of swiss", foods(("eggs", 2, "large"), ("swiss cheese", 1, "slice"))),
+        ("two large eggs and toast", foods(("eggs", 2, "large"), ("toast", 1, "slice"))),
+        ("4 eggs scrambled", foods(("scrambled eggs", 4, "large"))),
         ("2 tbsp of guacamole on the side", foods(("guacamole", 2, "tbsp"))),
         ("a scoop of vanilla ice cream", foods(("vanilla ice cream", 1, "scoop"))),
         ("3 pieces of dark chocolate", foods(("dark chocolate", 3, "piece"))),
@@ -753,6 +762,14 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
             f"About {protein} g protein on the USDA {cottage['serveLabel']} ({int(round(g))} g). {kcal_line(cottage)}",
             "protein",
         )
+        skyr = find_food(foods, "skyr") or find_food(foods, "greek yogurt") or cottage
+        sg = float(skyr["serveG"])
+        sp = round(float(skyr["protein"]) * sg / 100, 1)
+        add(
+            "protein in a serving of plain skyr?",
+            f"About {sp} g protein on the USDA {skyr['serveLabel']} ({int(round(sg))} g). {kcal_line(skyr)}",
+            "protein",
+        )
     if cap:
         from portions import convert_portion
 
@@ -784,7 +801,13 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
             )
         elif kind == "protein":
             add(
-                f"how much protein is in {name}?",
+                rng.choice(
+                    [
+                        f"how much protein is in {name}?",
+                        f"protein in a serving of {name}?",
+                        f"how's the protein in {name}?",
+                    ]
+                ),
                 f"About {protein} g protein on the USDA {food['serveLabel']} ({int(round(food['serveG']))} g). {fact}",
                 "protein",
             )

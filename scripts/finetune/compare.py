@@ -189,6 +189,11 @@ def main() -> None:
             f"| log → JSON | {pct(coach_b['jsonAcc'])} | {pct(coach_a['jsonAcc'])} | {delta(coach_b['jsonAcc'], coach_a['jsonAcc'])} |",
             f"| chat/Q → prose | {pct(coach_b['proseAcc'])} | {pct(coach_a['proseAcc'])} | {delta(coach_b['proseAcc'], coach_a['proseAcc'])} |",
             f"| USDA kcal in range | {pct(coach_b['kcalInRange'])} | {pct(coach_a['kcalInRange'])} | {delta(coach_b['kcalInRange'], coach_a['kcalInRange'])} |",
+            "",
+            "Eval infer uses the same `{\"foods\":[` assistant prefix as the PWA.",
+            "`fix-eggs` gold is 2 large eggs (185 kcal) while the photo is a mixed plate;",
+            "the model now emits JSON for egg, avocado, spinach, and bread, which inflates image MAE vs that eggs-only label.",
+            "Banana photo counts 5 and matches 525 kcal. Text MAE is the cleaner calorie signal.",
         ]
     Path(args.out).write_text("\n".join(lines) + "\n")
     if coach_b and coach_a:
