@@ -107,6 +107,7 @@ def change_table(b: dict, a: dict) -> list[str]:
         f"| kcal MAE | {num(b.get('kcalMae'))} | {num(a.get('kcalMae'))} | {delta(b.get('kcalMae'), a.get('kcalMae'), True)} |",
         f"| kcal median AE | {num(b.get('kcalMdae'))} | {num(a.get('kcalMdae'))} | {delta(b.get('kcalMdae'), a.get('kcalMdae'), True)} |",
         f"| kcal WAPE | {pct(b.get('kcalWape'))} | {pct(a.get('kcalWape'))} | {delta_pp(b.get('kcalWape'), a.get('kcalWape'), True)} |",
+        f"| meal MAPE (≥50 kcal) | {pct(b.get('kcalMapeMeal'))} | {pct(a.get('kcalMapeMeal'))} | {delta_pp(b.get('kcalMapeMeal'), a.get('kcalMapeMeal'), True)} |",
         f"| kcal median relative error | {pct(b.get('kcalMdape'))} | {pct(a.get('kcalMdape'))} | {delta_pp(b.get('kcalMdape'), a.get('kcalMdape'), True)} |",
         f"| within 20% of gold kcal | {pct(b.get('within20'))} | {pct(a.get('within20'))} | {delta_pp(b.get('within20'), a.get('within20'))} |",
         f"| within 50% of gold kcal | {pct(b.get('within50'))} | {pct(a.get('within50'))} | {delta_pp(b.get('within50'), a.get('within50'))} |",

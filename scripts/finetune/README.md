@@ -5,6 +5,7 @@ Photo path: **identify names/brands** → host USDA RAG (serving grams) → **po
 Text path is the same two stages: keywords only, then original meal + catalog → foods/ingredients.
 Primary metric: **calorie MAPE on Nutrition5k meals ≥50 kcal**, plus WAPE. Target: MAPE **< 30%**. Name accuracy is secondary.
 The model must not invent calories or pick a catalog letter. Coach mix keeps chat/Q&A with USDA citations.
+Production ckpt: `evals/data/finetune/ckpts/lfm25vl-opencal` (two-stage v11, resumed from v8).
 
 ## Datasets
 

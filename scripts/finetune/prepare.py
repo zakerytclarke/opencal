@@ -1396,6 +1396,9 @@ def main() -> None:
         "fixtures": build_fixtures(args.fixture_upsample, rng, foods),
         "nutrition5k": [] if args.skip_n5k else build_nutrition5k(args.n5k, rng, foods),
     }
+    # Text is identify+portion per meal. Repeat vision so photos are not starved.
+    parts["fixtures"] = parts["fixtures"] + parts["fixtures"]
+    parts["nutrition5k"] = parts["nutrition5k"] + parts["nutrition5k"]
 
     train: list[dict] = []
     val: list[dict] = []
