@@ -1,4 +1,5 @@
 import { BottomBar } from '../components/BottomBar'
+import { VlmStatusBar } from '../components/VlmStatus'
 import { CalorieRing } from '../components/CalorieRing'
 import { FoodRow } from '../components/FoodRow'
 import { MacroBars } from '../components/MacroBars'
@@ -98,6 +99,7 @@ export function Home({
         )}
       </section>
 
+      <VlmStatusBar />
       <p className="db-note">{foodCount().toLocaleString()} foods on this device · USDA + compiled</p>
       <BottomBar onVoice={onVoice} onSearch={onSearch} onPhoto={onPhoto} />
     </div>

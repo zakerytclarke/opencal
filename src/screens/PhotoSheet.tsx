@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { extractFoods } from '../lib/extract'
 import { resolveExtracted } from '../lib/foods'
+import { getVlmStatus, subscribeVlm, warmupVlm } from '../lib/vlm'
 import { foodsFromImage } from '../lib/vision'
 import type { LogEntry } from '../types'
 
@@ -18,6 +19,12 @@ export function PhotoSheet({ date, onClose, onLog }: Props) {
   const [caption, setCaption] = useState('')
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [pct, setPct] = useState(0)
+  const [vlm, setVlm] = useState(() => getVlmStatus())
+
+  useEffect(() => {
+    warmupVlm()
+    return subscribeVlm(setVlm)
+  }, [])
 
   async function onFile(file: File | undefined) {
     if (!file) return
@@ -75,8 +82,23 @@ export function PhotoSheet({ date, onClose, onLog }: Props) {
           <i style={{ width: `${pct}%` }} />
         </div>
       )}
-      <p className="lede">{status}</p>
-      {caption && <p className="caption">“{caption}”</p>}
+      {!busy && vlm.state === 'downloading' && (
+        <div className="progress" aria-valuenow={vlm.pct}>
+          <i style={{ width: `${vlm.pct}%` }} />
+        </div>
+      )}
+      <p className="lede">
+        {busy
+          ? status
+          : vlm.state === 'ready'
+            ? 'Snap a meal. Vision runs on this device and searches the food database.'
+            : vlm.state === 'downloading'
+              ? `Preparing photo logging… ${Math.round(vlm.pct)}%`
+              : vlm.state === 'error'
+                ? vlm.message
+                : status}
+      </p>
+      {caption && <p className="caption">{caption}</p>}
       {entries.length > 0 && (
         <div className="preview">
           {entries.map((e) => (

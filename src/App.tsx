@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { addEntries, clearProfile, loadDiary, loadProfile, removeEntry, saveProfile } from './lib/storage'
 import { loadFoods } from './lib/foods'
+import { warmupVlm } from './lib/vlm'
 import { todayKey } from './lib/dates'
 import { speak } from './lib/speech'
 import type { Diary, LogEntry, Profile } from './types'
@@ -22,6 +23,7 @@ export default function App() {
 
   useEffect(() => {
     void loadFoods().finally(() => setReady(true))
+    warmupVlm()
   }, [])
 
   function finishOnboarding(next: Profile) {

@@ -8,7 +8,7 @@ const ACTIVITY_FACTOR: Record<Activity, number> = {
   very: 1.9,
 }
 
-/** Mifflin-St Jeor BMR, same family of math MyFitnessPal uses. */
+/** Mifflin-St Jeor BMR. */
 export function bmrKcal(sex: Sex, weightKg: number, heightCm: number, age: number): number {
   const base = 10 * weightKg + 6.25 * heightCm - 5 * age
   return sex === 'male' ? base + 5 : base - 161

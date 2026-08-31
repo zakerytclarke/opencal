@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { VlmStatusBar } from '../components/VlmStatus'
 import { buildGoals, ftInToCm, goalDate, kgToLb, lbToKg, weeksToGoal } from '../lib/plan'
 import type { Activity, Profile, Sex, Units } from '../types'
 
@@ -118,7 +119,7 @@ export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
       {step === 1 && (
         <section className="onboard-card">
           <h1>About you</h1>
-          <p className="lede">Used to estimate your daily calorie budget, just like MyFitnessPal.</p>
+          <p className="lede">Used to estimate your daily calorie budget.</p>
           <div className="seg">
             <button type="button" className={draft.sex === 'female' ? 'is-on' : ''} onClick={() => setDraft({ ...draft, sex: 'female' })}>
               Female
@@ -192,7 +193,7 @@ export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
           <h1>{gaining ? 'How quickly do you want to gain?' : losing ? 'How quickly do you want to lose?' : 'Maintain your weight'}</h1>
           <p className="lede">
             {losing || gaining
-              ? '1 lb per week is the usual MyFitnessPal recommendation.'
+              ? '1 lb per week is the usual recommended pace.'
               : 'You can still log food and keep your calories at maintenance.'}
           </p>
           {(losing || gaining) && (
@@ -253,6 +254,7 @@ export function Onboarding({ onDone }: { onDone: (p: Profile) => void }) {
       <button type="button" className="primary" onClick={next}>
         {step === 0 ? 'Get started' : step === 5 ? 'Go to Today' : 'Continue'}
       </button>
+      <VlmStatusBar />
     </div>
   )
 }
