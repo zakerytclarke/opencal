@@ -56,7 +56,8 @@ function rank(query: string, food: Food, miniScore: number): number {
   const first = name.split(',')[0]?.trim() ?? name
   const aliases = food.aliases.map(normalize)
   let score = miniScore * 0.2
-  if (name === q || first === q || aliases.includes(q)) score += 120
+  if (name === q || aliases.includes(q)) score += 160
+  else if (first === q) score += 120
   else if (name.startsWith(`${q} `) || name.startsWith(`${q},`) || aliases.some((a) => a.startsWith(q))) score += 55
   else if (wordBoundaryHas(name, q) || aliases.some((a) => wordBoundaryHas(a, q))) score += 20
   score -= Math.min(36, Math.max(0, name.length - q.length) * 0.28)
