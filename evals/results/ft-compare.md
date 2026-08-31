@@ -19,16 +19,16 @@ Calories are MiniSearch + convert_portion on the model's extract (USDA per-100 g
 
 ### Fine-tuned (n=18)
 - Food name accuracy: 100.0%
-- Calorie MAE: 42.7 kcal (median 0.0)
-- Calorie MAPE: 22.7% · within 20%: 94.4% · within 50%: 94.4%
-- Calorie MAE when named correctly: 42.7
+- Calorie MAE: 56.1 kcal (median 0.0)
+- Calorie MAPE: 25.9% · within 20%: 88.9% · within 50%: 94.4%
+- Calorie MAE when named correctly: 56.1
 
 | metric | baseline | fine-tuned | change |
 |---|---:|---:|---|
 | name acc | 77.8% | 100.0% | +22.2 pp (improved) |
-| kcal MAE | 102.2 | 42.7 | -59.5 (improved) |
+| kcal MAE | 102.2 | 56.1 | -46.1 (improved) |
 | kcal median AE | 47.5 | 0.0 | -47.5 (improved) |
-| within 20% | 50.0% | 94.4% | +44.4 pp (improved) |
+| within 20% | 50.0% | 88.9% | +38.9 pp (improved) |
 | within 50% | 72.2% | 94.4% | +22.2 pp (improved) |
 
 v1 vs this run (same held-out split):
@@ -36,7 +36,7 @@ v1 vs this run (same held-out split):
 | metric | v1 | this run | change |
 |---|---:|---:|---|
 | name acc | 88.9% | 100.0% | +11.1 pp (improved) |
-| kcal MAE | 65.8 | 42.7 | -23.1 (improved) |
+| kcal MAE | 65.8 | 56.1 | -9.7 (improved) |
 
 ## Text vs images
 
@@ -67,9 +67,9 @@ v1 vs this run (same held-out split):
 - Calorie MAE when named correctly: 420.0
 ### Fine-tuned images (n=2)
 - Food name accuracy: 100.0%
-- Calorie MAE: 373.0 kcal (median 373.0)
-- Calorie MAPE: 201.6% · within 20%: 50.0% · within 50%: 50.0%
-- Calorie MAE when named correctly: 373.0
+- Calorie MAE: 494.0 kcal (median 494.0)
+- Calorie MAPE: 230.3% · within 20%: 0.0% · within 50%: 50.0%
+- Calorie MAE when named correctly: 494.0
 
 ## Coach (don't forget how to talk)
 
@@ -84,11 +84,15 @@ Eval infer uses the same `{"foods":[` assistant prefix as the PWA.
 Text MAE applies the same refineExtracted host pass as the PWA (bare eggs → large, compound names).
 `fix-eggs` gold is 2 large eggs (185 kcal) while the photo is a mixed plate;
 the model emits JSON for egg plus sides, which inflates image MAE vs that eggs-only label.
-Banana photo counts 5 and matches 525 kcal. Text MAE is the cleaner calorie signal.
-If the USDA fruit banana row is missing from hits, the host refuses chips/pepper near-misses (0 kcal unmatched).
+Banana photo currently counts 7 (was 5 / 525 kcal). Text MAE is the cleaner calorie signal.
+If the USDA fruit banana row is missing from hits, pick-null (and the host) refuse chips/pepper near-misses (0 kcal unmatched).
 
 ## Pick / refuse (RAG)
 
-Held-out `evals/splits/pick.json`: 2/5 correct.
-Refuse when the true USDA row is missing: 0/3.
+Held-out `evals/splits/pick.json`: 6/7 correct.
+Refuse when the true USDA row is missing: 5/5.
 Calories are never taken from the model; pick-null leaves the diary unmatched (0 kcal).
+
+## Citation / refuse (coach)
+
+Held-out `evals/splits/cite.json`: 2/3 cite USDA/convert_portion or refuse without a row.

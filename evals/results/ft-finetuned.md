@@ -1,4 +1,4 @@
-# OpenCal extract→USDA eval · v4 · 2026-08-31T09:55:24.153Z
+# OpenCal extract→USDA eval · v5 · 2026-08-31T10:05:16.523Z
 
 Extracts from the VLM, calories from MiniSearch + convert_portion (no pick VLM). Text scoring applies the same refineExtracted host pass as the PWA.
 
@@ -10,15 +10,15 @@ Extracts from the VLM, calories from MiniSearch + convert_portion (no pick VLM).
 - Empty/unmatched: 0.0% · mean latency 12 ms
 ### Images (n=2)
 - Food name accuracy: 100.0%
-- Calorie MAE: 373.0 kcal (median 373.0)
-- Calorie MAPE: 201.6% · within 20%: 50.0% · within 50%: 50.0%
-- Calorie MAE when named correctly: 373.0 kcal
-- Empty/unmatched: 0.0% · mean latency 2 ms
+- Calorie MAE: 494.0 kcal (median 494.0)
+- Calorie MAPE: 230.3% · within 20%: 0.0% · within 50%: 50.0%
+- Calorie MAE when named correctly: 494.0 kcal
+- Empty/unmatched: 0.0% · mean latency 3 ms
 ### All (n=18)
 - Food name accuracy: 100.0%
-- Calorie MAE: 42.7 kcal (median 0.0)
-- Calorie MAPE: 22.7% · within 20%: 94.4% · within 50%: 94.4%
-- Calorie MAE when named correctly: 42.7 kcal
+- Calorie MAE: 56.1 kcal (median 0.0)
+- Calorie MAPE: 25.9% · within 20%: 88.9% · within 50%: 94.4%
+- Calorie MAE when named correctly: 56.1 kcal
 - Empty/unmatched: 0.0% · mean latency 11 ms
 
 | id | hit | pred kcal | gold kcal | abs err | ape | items |
@@ -39,5 +39,5 @@ Extracts from the VLM, calories from MiniSearch + convert_portion (no pick VLM).
 | test-turkey-bacon | yes | 121 | 121 | 0 | 0% | Turkey Bacon |
 | test-milk-not-almond | yes | 127 | 127 | 0 | 0% | Milk |
 | test-banana-pepper | yes | 41 | 41 | 0 | 0% | Banana Pepper |
-| fix-banana | yes | 525 | 525 | 0 | 0% | Banana |
-| fix-eggs | yes | 931 | 185 | 746 | 403% | Egg, Avocado, Spinach, Bacon |
+| fix-banana | yes | 735 | 525 | 210 | 40% | Banana |
+| fix-eggs | yes | 963 | 185 | 778 | 421% | Egg, Avocado, Spinach, Bacon, Milk |
