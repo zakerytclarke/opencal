@@ -264,6 +264,28 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
   border-radius: 16px; padding: 16px; color: var(--hero); font-size: 18px;
 }
 
+.log-job {
+  margin: 8px; padding: 12px; border-radius: 16px;
+  background: #11161c; border: 1px solid #2a2f37; text-align: left;
+}
+.log-job-input { font-size: 16px; font-weight: 750; color: var(--hero); letter-spacing: -0.02em; }
+.log-job-thumb { margin: 10px 0 0; border-radius: 12px; overflow: hidden; aspect-ratio: 16/9; background: #0b0e12; }
+.log-job-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.log-job-items { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.log-job-item {
+  display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center;
+  color: var(--slate); font-size: 14px;
+}
+.log-job-item b { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 750; color: var(--mute); }
+.log-job-item.is-matching { color: var(--hero); }
+.log-job-item.is-matching b { color: var(--lake); }
+.log-job-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--surface-2);
+}
+.log-job-item.is-matching .log-job-dot { background: var(--lake); box-shadow: 0 0 0 4px rgba(59, 143, 223, 0.18); }
+.log-job-progress { margin: 12px 0 8px; }
+.log-job-step { margin: 0; color: var(--slate); font-size: 13px; }
+
 @media (min-width: 800px) {
   body { padding: 24px 0; }
   .app { min-height: calc(100dvh - 48px); border-radius: 28px; overflow: hidden; }

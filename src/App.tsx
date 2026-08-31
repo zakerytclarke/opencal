@@ -1,13 +1,25 @@
 import { useEffect, useState } from 'react'
-import { LogOverlay, type LogKind } from './components/LogOverlay'
-import { addEntries, clearProfile, loadDiary, loadProfile, removeEntry, saveProfile } from './lib/storage'
-import { loadFoods } from './lib/foods'
+import { LogOverlay, type LogKind, type QueuePayload } from './components/LogOverlay'
+import { addEntries, clearProfile, loadDiary, loadProfile, removeEntry, saveProfile, uid } from './lib/storage'
+import { loadFoods, quickAddEntry } from './lib/foods'
+import { logFromPhoto, logFromText } from './lib/pipeline'
 import { warmupVlm } from './lib/vlm'
 import { todayKey } from './lib/dates'
 import { speak } from './lib/speech'
-import type { Diary, LogEntry, Profile } from './types'
+import type { Diary, ExtractedItem, LogEntry, LogJob, PendingFood, Profile } from './types'
 import { Home } from './screens/Home'
 import { Onboarding } from './screens/Onboarding'
+
+function pendingFrom(items: { query: string; brand?: string | null; quantity: number; unit: string | null }[]): PendingFood[] {
+  return items.map((item) => ({
+    id: uid(),
+    query: item.query,
+    brand: item.brand,
+    quantity: item.quantity,
+    unit: item.unit,
+    status: 'waiting',
+  }))
+}
 
 export default function App() {
   const [ready, setReady] = useState(false)
@@ -15,6 +27,7 @@ export default function App() {
   const [diary, setDiary] = useState<Diary>(() => loadDiary())
   const [date, setDate] = useState(todayKey())
   const [flow, setFlow] = useState<LogKind | null>(null)
+  const [jobs, setJobs] = useState<LogJob[]>([])
 
   useEffect(() => {
     void loadFoods().finally(() => setReady(true))
@@ -26,11 +39,104 @@ export default function App() {
     setProfile(next)
   }
 
-  function log(entries: LogEntry[]) {
+  function patchJob(id: string, patch: Partial<LogJob> | ((job: LogJob) => LogJob)) {
+    setJobs((list) =>
+      list.map((job) => {
+        if (job.id !== id) return job
+        return typeof patch === 'function' ? patch(job) : { ...job, ...patch }
+      }),
+    )
+  }
+
+  function addLogged(entries: Parameters<typeof addEntries>[2]) {
+    if (!entries.length) return
     setDiary((d) => addEntries(d, date, entries))
-    const kcal = entries.reduce((s, e) => s + e.kcal, 0)
-    const names = entries.map((e) => e.name).slice(0, 3).join(', ')
-    speak(`Logged ${names}. ${kcal} calories.`)
+  }
+
+  function queuePayload(payload: QueuePayload) {
+    const id = uid()
+    const job: LogJob = {
+      id,
+      date,
+      source: payload.kind === 'photo' ? 'photo' : payload.source,
+      input: payload.kind === 'photo' ? 'Photo' : payload.text,
+      previewUrl: payload.kind === 'photo' ? URL.createObjectURL(payload.file) : undefined,
+      status: 'extracting',
+      step: payload.kind === 'photo' ? 'Reading the photo…' : 'Finding foods…',
+      pct: 6,
+      pending: [],
+    }
+    setJobs((list) => [job, ...list])
+
+    const handlers = {
+      onProgress: ({ message, pct }: { message: string; pct: number }) => {
+        patchJob(id, (j) => ({
+          ...j,
+          step: message,
+          pct,
+          status: message.startsWith('Matching') ? 'matching' : j.status,
+          pending: message.startsWith('Matching')
+            ? j.pending.map((p) =>
+                p.status === 'done'
+                  ? p
+                  : message.includes(p.query)
+                    ? { ...p, status: 'matching' as const }
+                    : p.status === 'matching'
+                      ? { ...p, status: 'waiting' as const }
+                      : p,
+              )
+            : j.pending,
+        }))
+      },
+      onExtracted: (items: ExtractedItem[]) => {
+        patchJob(id, {
+          status: 'matching',
+          pending: pendingFrom(items),
+          step: items.length ? `Found ${items.length} food${items.length === 1 ? '' : 's'}` : 'No foods found',
+          pct: 28,
+        })
+      },
+      onEntry: (entry: LogEntry, item: ExtractedItem, index: number) => {
+        addLogged([entry])
+        patchJob(id, (j) => ({
+          ...j,
+          pending: j.pending.map((p, i) => (i === index ? { ...p, status: 'done' as const } : p)),
+          step: item.query ? `Logged ${item.query}` : j.step,
+        }))
+      },
+    }
+
+    void (async () => {
+      try {
+        const entries =
+          payload.kind === 'photo'
+            ? await logFromPhoto(payload.file, date, handlers)
+            : await logFromText(payload.text, date, payload.source, handlers)
+        const names = entries.map((e) => e.name).slice(0, 3).join(', ')
+        const kcal = entries.reduce((s, e) => s + e.kcal, 0)
+        if (entries.length) speak(`Logged ${names}. ${kcal} calories.`)
+        patchJob(id, { status: 'done', step: 'Done', pct: 100, pending: [] })
+        window.setTimeout(() => {
+          setJobs((list) => {
+            const gone = list.find((j) => j.id === id)
+            if (gone?.previewUrl) URL.revokeObjectURL(gone.previewUrl)
+            return list.filter((j) => j.id !== id)
+          })
+        }, 900)
+      } catch (err) {
+        patchJob(id, {
+          status: 'error',
+          error: err instanceof Error ? err.message : 'Could not log that.',
+          step: 'Could not log that.',
+        })
+      }
+    })()
+  }
+
+  function quickLog(kcal: number, raw: string) {
+    const entry = { ...quickAddEntry(kcal, date), debugInput: raw, debugRaw: '(quick add — model skipped)', debugPath: 'quick' as const }
+    addLogged([entry])
+    speak(`Logged ${kcal} calories.`)
   }
 
   function del(id: string) {
@@ -61,6 +167,7 @@ export default function App() {
           profile={profile}
           diary={diary}
           date={date}
+          jobs={jobs}
           onDate={setDate}
           onDelete={del}
           onVoice={() => setFlow('voice')}
@@ -72,7 +179,7 @@ export default function App() {
 
       {profile && flow && <div className="backdrop" onClick={() => setFlow(null)} />}
       {profile && flow && (
-        <LogOverlay kind={flow} date={date} onClose={() => setFlow(null)} onLog={log} />
+        <LogOverlay kind={flow} onClose={() => setFlow(null)} onQueue={queuePayload} onQuick={quickLog} />
       )}
     </div>
   )

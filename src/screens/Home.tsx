@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BottomBar } from '../components/BottomBar'
 import { FoodBatchCard } from '../components/FoodBatch'
+import { LogJobCard } from '../components/LogJobCard'
 import { VlmStatusBar } from '../components/VlmStatus'
 import { CalorieRing } from '../components/CalorieRing'
 import { MacroBars } from '../components/MacroBars'
@@ -10,12 +11,13 @@ import { totals } from '../lib/diary'
 import { foodCount } from '../lib/foods'
 import { prettyDate, weekKeys } from '../lib/dates'
 import { kgToLb } from '../lib/plan'
-import type { Diary, Profile } from '../types'
+import type { Diary, LogJob, Profile } from '../types'
 
 type Props = {
   profile: Profile
   diary: Diary
   date: string
+  jobs: LogJob[]
   onDate: (key: string) => void
   onDelete: (id: string) => void
   onVoice: () => void
@@ -28,6 +30,7 @@ export function Home({
   profile,
   diary,
   date,
+  jobs,
   onDate,
   onDelete,
   onVoice,
@@ -101,7 +104,10 @@ export function Home({
             </button>
           </div>
         </div>
-        {entries.length === 0 ? (
+        {jobs.filter((j) => j.date === date).map((job) => (
+          <LogJobCard key={job.id} job={job} />
+        ))}
+        {entries.length === 0 && jobs.length === 0 ? (
           <p className="empty">Nothing logged yet. Search, speak, or snap a photo.</p>
         ) : (
           batches.map((batch) => <FoodBatchCard key={batch.id} batch={batch} debug={debug} onDelete={onDelete} />)

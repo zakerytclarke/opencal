@@ -12,7 +12,13 @@ const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))
 
 await page.goto(base, { waitUntil: 'networkidle' })
-await page.evaluate(() => localStorage.clear())
+await page.evaluate(async () => {
+  const regs = await navigator.serviceWorker.getRegistrations()
+  await Promise.all(regs.map((r) => r.unregister()))
+  const keys = await caches.keys()
+  await Promise.all(keys.map((k) => caches.delete(k)))
+  localStorage.clear()
+})
 await page.reload({ waitUntil: 'networkidle' })
 await page.getByRole('button', { name: 'Get started' }).click()
 await page.getByRole('button', { name: 'Continue' }).click()
@@ -26,13 +32,18 @@ await page.getByRole('button', { name: 'Search foods' }).click()
 await page.getByPlaceholder(/2 eggs/).fill('500 calories')
 await page.getByRole('button', { name: 'Log', exact: true }).click()
 await page.waitForSelector('text=Quick add')
+await page.waitForSelector('.log-overlay', { state: 'detached' })
 
 const kcal = await page.locator('.stat b').first().innerText()
 if (Number(kcal.replace(/,/g, '')) !== 500) throw new Error(`expected 500 eaten, got ${kcal}`)
 console.log('e2e quick-add ok — eaten', kcal)
 
 const ready = await page.waitForFunction(
-  () => window.__opencalVlm?.getVlmStatus().state === 'ready' || window.__opencalVlm?.getVlmStatus().state === 'error',
+  () => {
+    const s = window.__opencalVlm?.getVlmStatus()
+    return s?.state === 'ready' || s?.state === 'error'
+  },
+  null,
   { timeout: vlmTimeout },
 ).then(() => page.evaluate(() => window.__opencalVlm?.getVlmStatus()))
 

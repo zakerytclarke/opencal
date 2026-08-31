@@ -1,16 +1,20 @@
 import { extractFoods } from './extract'
 import type { DebugPath, ExtractedItem } from '../types'
 import {
-  PHOTO_ASSISTANT_PREFIX,
-  PHOTO_SYSTEM_PROMPT,
-  PHOTO_USER_PROMPT,
-  SYSTEM_PROMPT,
-  TEXT_FEWSHOT,
+  EXTRACT_FEWSHOT,
+  EXTRACT_PREFIX,
+  EXTRACT_SYSTEM,
+  PHOTO_EXTRACT_SYSTEM,
+  PHOTO_EXTRACT_USER,
+  PICK_PREFIX,
+  PICK_SYSTEM,
+  extractUserPrompt,
   formatChatPrompt,
-  itemsFromModelText,
-  parseToolCalls,
+  parseExtractedFoods,
+  parsePick,
+  pickUserPrompt,
   stripSpecialTokens,
-  textUserPrompt,
+  type PickDecision,
 } from './vlmParse'
 
 export type AnalyzeResult = {
@@ -55,6 +59,7 @@ type Session = {
 
 let session: Session | null = null
 let loadPromise: Promise<Session> | null = null
+let generateLock: Promise<void> = Promise.resolve()
 let status: VlmStatus = { state: 'idle', message: '', pct: 0 }
 const listeners = new Set<(s: VlmStatus) => void>()
 
@@ -112,8 +117,7 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
     onProgress?.('Downloading on-device vision…', 4)
     const tf = await import('@huggingface/transformers')
     const { device, dtype } = pickRuntime()
-    const preparing =
-      device === 'webgpu' ? 'Preparing WebGPU…' : device === 'cpu' ? 'Preparing on-device runtime…' : 'Preparing on-device runtime…'
+    const preparing = device === 'webgpu' ? 'Preparing WebGPU…' : 'Preparing on-device runtime…'
     setStatus({ message: preparing, pct: 10 })
     onProgress?.(preparing, 10)
 
@@ -169,7 +173,6 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
   return loadPromise
 }
 
-/** Start the LFM download without blocking the UI. Safe to call many times. */
 export function warmupVlm(): void {
   if (status.state === 'ready' || status.state === 'downloading') return
   void loadSession().catch(() => {})
@@ -182,90 +185,158 @@ export function isVlmReady(): boolean {
 async function decodeGeneration(
   sess: Session,
   inputs: { input_ids: TensorLike } & Record<string, unknown>,
+  maxNewTokens: number,
 ): Promise<string> {
-  const outputs = await sess.model.generate({
-    ...inputs,
-    max_new_tokens: 320,
-    do_sample: false,
-    repetition_penalty: 1.05,
+  const run = generateLock.then(async () => {
+    const outputs = await sess.model.generate({
+      ...inputs,
+      max_new_tokens: maxNewTokens,
+      do_sample: false,
+      repetition_penalty: 1.05,
+    })
+    const start = inputs.input_ids.dims.at(-1) ?? 0
+    const decoded = sess.processor.batch_decode(
+      (outputs as { slice: (a: null, range: [number | null, null]) => unknown }).slice(null, [start, null]),
+      { skip_special_tokens: false },
+    )[0]
+    return String(decoded ?? '').trim()
   })
-  const start = inputs.input_ids.dims.at(-1) ?? 0
-  const decoded = sess.processor.batch_decode(
-    (outputs as { slice: (a: null, range: [number | null, null]) => unknown }).slice(null, [start, null]),
-    { skip_special_tokens: false },
-  )[0]
-  return String(decoded ?? '').trim()
+  generateLock = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
 }
 
-function finish(raw: string, items: ExtractedItem[], started: number, fallback?: string): AnalyzeResult {
-  const usedModel = parseToolCalls(raw).length > 0
-  const resolved = items.length ? items : fallback ? extractFoods(fallback) : []
-  return {
-    raw: stripSpecialTokens(raw) || raw,
-    items: resolved,
-    path: usedModel ? 'vlm' : 'vlm-empty',
-    ms: Math.round(performance.now() - started),
+async function completeText(prompt: string, maxNewTokens: number, onProgress?: ProgressFn): Promise<string> {
+  const sess = await loadSession(onProgress)
+  const inputs = await sess.processor.tokenizer(prompt, { add_special_tokens: false })
+  return decodeGeneration(sess, inputs, maxNewTokens)
+}
+
+export async function extractMealText(text: string, onProgress?: ProgressFn): Promise<AnalyzeResult> {
+  const started = performance.now()
+  try {
+    onProgress?.('Finding foods…', 18)
+    const prompt = formatChatPrompt(
+      [
+        { role: 'system', content: EXTRACT_SYSTEM },
+        ...EXTRACT_FEWSHOT,
+        { role: 'user', content: extractUserPrompt(text) },
+      ],
+      true,
+      EXTRACT_PREFIX,
+    )
+    const raw = await completeText(prompt, 220, onProgress)
+    const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
+    const items = parseExtractedFoods(labeled, text)
+    return {
+      raw: stripSpecialTokens(labeled) || labeled,
+      items,
+      path: items.length ? 'vlm' : 'vlm-empty',
+      ms: Math.round(performance.now() - started),
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return {
+      raw: '',
+      items: extractFoods(text),
+      path: 'error-fallback',
+      error: message,
+      ms: Math.round(performance.now() - started),
+    }
   }
 }
 
-function fail(err: unknown, started: number, fallbackItems: ExtractedItem[]): AnalyzeResult {
-  const message = err instanceof Error ? err.message : String(err)
-  return {
-    raw: '',
-    items: fallbackItems,
-    path: 'error-fallback',
-    error: message,
-    ms: Math.round(performance.now() - started),
+export async function extractMealPhoto(image: Blob, onProgress?: ProgressFn): Promise<AnalyzeResult> {
+  const started = performance.now()
+  try {
+    const sess = await loadSession(onProgress)
+    onProgress?.('Reading the photo…', 16)
+    const img = await sess.loadImage(image)
+    const prompt = formatChatPrompt(
+      [
+        { role: 'system', content: PHOTO_EXTRACT_SYSTEM },
+        {
+          role: 'user',
+          content: [
+            { type: 'image' },
+            { type: 'text', text: PHOTO_EXTRACT_USER },
+          ],
+        },
+      ],
+      true,
+      EXTRACT_PREFIX,
+    )
+    const inputs = await sess.runProcessor(img, prompt)
+    onProgress?.('Finding foods…', 28)
+    const raw = await decodeGeneration(sess, inputs, 220)
+    const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
+    const items = parseExtractedFoods(labeled)
+    return {
+      raw: stripSpecialTokens(labeled) || labeled,
+      items,
+      path: items.length ? 'vlm' : 'vlm-empty',
+      ms: Math.round(performance.now() - started),
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return {
+      raw: '',
+      items: [],
+      path: 'error-fallback',
+      error: message,
+      ms: Math.round(performance.now() - started),
+    }
   }
+}
+
+export async function pickFoodMatch(
+  meal: string,
+  item: ExtractedItem,
+  lines: string[],
+  onProgress?: ProgressFn,
+): Promise<{ decision: PickDecision; raw: string; ms: number; error?: string }> {
+  const started = performance.now()
+  try {
+    const prompt = formatChatPrompt(
+      [
+        { role: 'system', content: PICK_SYSTEM },
+        { role: 'user', content: pickUserPrompt({ meal, item, lines }) },
+      ],
+      true,
+      PICK_PREFIX,
+    )
+    const raw = await completeText(prompt, 80, onProgress)
+    const labeled = raw.trim().startsWith('{') ? raw : `${PICK_PREFIX}${raw}`
+    return {
+      decision: parsePick(labeled, lines.length),
+      raw: stripSpecialTokens(labeled) || labeled,
+      ms: Math.round(performance.now() - started),
+    }
+  } catch (err) {
+    return {
+      decision: {
+        index: 0,
+        name: item.query,
+        brand: item.brand ?? null,
+        unit: item.unit,
+        quantity: item.quantity,
+      },
+      raw: '',
+      ms: Math.round(performance.now() - started),
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+/** Extract-only wrappers used by tests. Matching happens in the pipeline. */
+export async function analyzeMealText(text: string, onProgress?: ProgressFn): Promise<AnalyzeResult> {
+  return extractMealText(text, onProgress)
 }
 
 export async function analyzeMealPhoto(image: Blob, onProgress?: ProgressFn): Promise<AnalyzeResult> {
-  const started = performance.now()
-  try {
-    const sess = await loadSession(onProgress)
-    onProgress?.('Reading the photo…', 82)
-    const img = await sess.loadImage(image)
-    const messages = [
-      { role: 'system', content: PHOTO_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          { type: 'image' },
-          { type: 'text', text: PHOTO_USER_PROMPT },
-        ],
-      },
-    ]
-    const prompt = formatChatPrompt(messages, true, PHOTO_ASSISTANT_PREFIX)
-    const inputs = await sess.runProcessor(img, prompt)
-    onProgress?.('Finding foods…', 88)
-    const raw = await decodeGeneration(sess, inputs)
-    onProgress?.('Matching the local database…', 94)
-    const labeled = /^1\./.test(raw) ? raw : `${PHOTO_ASSISTANT_PREFIX}${raw}`
-    return finish(labeled, itemsFromModelText(labeled), started)
-  } catch (err) {
-    return fail(err, started, [])
-  }
-}
-
-export async function analyzeMealText(text: string, onProgress?: ProgressFn): Promise<AnalyzeResult> {
-  const started = performance.now()
-  try {
-    const sess = await loadSession(onProgress)
-    onProgress?.('Running LFM2.5-VL…', 82)
-    const messages = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...TEXT_FEWSHOT,
-      { role: 'user', content: textUserPrompt(text) },
-    ]
-    const prompt = formatChatPrompt(messages)
-    const inputs = await sess.processor.tokenizer(prompt, { add_special_tokens: false })
-    onProgress?.('Finding foods…', 88)
-    const raw = await decodeGeneration(sess, inputs)
-    onProgress?.('Matching the local database…', 94)
-    return finish(raw, itemsFromModelText(raw, text), started, text)
-  } catch (err) {
-    return fail(err, started, extractFoods(text))
-  }
+  return extractMealPhoto(image, onProgress)
 }
 
 if (typeof window !== 'undefined') {
@@ -273,6 +344,9 @@ if (typeof window !== 'undefined') {
     __opencalVlm: {
       getVlmStatus,
       warmupVlm,
+      extractMealText,
+      extractMealPhoto,
+      pickFoodMatch,
       analyzeMealText,
       analyzeMealPhoto,
       isVlmReady,

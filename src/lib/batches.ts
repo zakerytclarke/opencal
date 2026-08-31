@@ -43,7 +43,7 @@ export function groupBatches(entries: LogEntry[]): FoodBatch[] {
 export function pathLabel(path: LogEntry['debugPath']): string {
   switch (path) {
     case 'vlm':
-      return 'VLM tools'
+      return 'VLM match'
     case 'vlm-empty':
       return 'VLM ran, no tools'
     case 'error-fallback':

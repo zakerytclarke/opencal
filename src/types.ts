@@ -54,6 +54,7 @@ export type LogEntry = {
   date: string
   foodId: string
   name: string
+  brand?: string | null
   emoji: string
   grams: number
   servings: number
@@ -77,7 +78,32 @@ export type Diary = Record<string, LogEntry[]>
 export type ExtractedItem = {
   raw: string
   query: string
+  brand?: string | null
   quantity: number
   unit: string | null
   caloriesHint?: number
+}
+
+export type LogJobStatus = 'queued' | 'extracting' | 'matching' | 'done' | 'error'
+
+export type PendingFood = {
+  id: string
+  query: string
+  brand?: string | null
+  quantity: number
+  unit: string | null
+  status: 'waiting' | 'matching' | 'done'
+}
+
+export type LogJob = {
+  id: string
+  date: string
+  source: LogEntry['source']
+  input: string
+  previewUrl?: string
+  status: LogJobStatus
+  step: string
+  pct: number
+  pending: PendingFood[]
+  error?: string
 }

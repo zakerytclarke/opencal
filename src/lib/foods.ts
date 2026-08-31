@@ -171,6 +171,30 @@ export function scaleFood(food: Food, grams: number): Pick<LogEntry, 'kcal' | 'p
   }
 }
 
+export function foodBrand(name: string): string | null {
+  const lead = name.match(/^([A-Z][A-Z0-9'&. ]{1,40}?)(?:'S|'s)?, /)
+  if (lead) return lead[1].replace(/'S$/, "'s").trim()
+  const paren = name.match(/\(([^)]+)\)$/)
+  if (paren && /[A-Za-z]/.test(paren[1]) && paren[1].length < 36) return paren[1].trim()
+  return null
+}
+
+export function candidateLines(hits: Food[]): { key: string; food: Food; line: string }[] {
+  return hits.slice(0, 8).map((food, i) => {
+    const key = String.fromCharCode(65 + i)
+    const brand = foodBrand(food.name)
+    const line = `${key}. ${food.name}${brand ? ` · brand ${brand}` : ''} · serving ${food.serveLabel} (${Math.round(food.serveG)} g)`
+    return { key, food, line }
+  })
+}
+
+export function searchForItem(item: ExtractedItem, limit = 8): Food[] {
+  const q = [item.brand, item.query].filter(Boolean).join(' ')
+  const hits = searchFoods(q, limit)
+  if (hits.length || !item.brand) return hits
+  return searchFoods(item.query, limit)
+}
+
 export function entryFromFood(
   food: Food,
   item: ExtractedItem,
@@ -185,13 +209,35 @@ export function entryFromFood(
     date,
     foodId: food.id,
     name: food.name,
+    brand: item.brand ?? foodBrand(food.name),
     emoji: food.emoji,
     grams,
     servings,
     serveLabel: item.unit
-      ? `${trimQty(item.quantity)} ${item.unit}`
+      ? `${trimQty(item.quantity)} × ${item.unit}`
       : `${trimQty(servings)} × ${food.serveLabel}`,
     ...macros,
+    source,
+    loggedAt: new Date().toISOString(),
+  }
+}
+
+export function unmatchedEntry(item: ExtractedItem, source: LogEntry['source'], date: string): LogEntry {
+  const label = [item.quantity, item.unit].filter(Boolean).join(' ') || 'unmatched'
+  return {
+    id: uid(),
+    date,
+    foodId: 'unmatched',
+    name: item.query || item.raw,
+    brand: item.brand ?? null,
+    emoji: '🍽️',
+    grams: 0,
+    servings: item.quantity,
+    serveLabel: label,
+    kcal: item.caloriesHint ?? 0,
+    protein: 0,
+    carbs: 0,
+    fat: 0,
     source,
     loggedAt: new Date().toISOString(),
   }
@@ -235,26 +281,7 @@ export function resolveExtracted(
       if (item.caloriesHint) {
         return { entry: quickAddEntry(item.caloriesHint, date, item.query || item.raw), food: null, item }
       }
-      return {
-        entry: {
-          id: uid(),
-          date,
-          foodId: 'unmatched',
-          name: item.query || item.raw,
-          emoji: '🍽️',
-          grams: 0,
-          servings: item.quantity,
-          serveLabel: item.unit ? `${item.quantity} ${item.unit}` : 'unmatched',
-          kcal: item.caloriesHint ?? 0,
-          protein: 0,
-          carbs: 0,
-          fat: 0,
-          source,
-          loggedAt: new Date().toISOString(),
-        },
-        food: null,
-        item,
-      }
+      return { entry: unmatchedEntry(item, source, date), food: null, item }
     }
     return { entry: entryFromFood(food, item, source, date), food, item }
   })

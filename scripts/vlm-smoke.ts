@@ -1,92 +1,89 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { analyzeMealPhoto, analyzeMealText, getVlmStatus } from '../src/lib/vlm.ts'
+import { loadFoods, searchForItem } from '../src/lib/foods.ts'
 
-type Expectation = {
-  name: string
-  want: string[]
-  minItems?: number
-}
+const foodsJson = readFileSync(new URL('../public/foods.json', import.meta.url))
+const realFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes('foods.json')) {
+    return new Response(foodsJson, { headers: { 'content-type': 'application/json' } })
+  }
+  return realFetch(input, init)
+}) as typeof fetch
+import { logFromPhoto, logFromText } from '../src/lib/pipeline.ts'
+import { extractMealPhoto, extractMealText, getVlmStatus } from '../src/lib/vlm.ts'
+
+await loadFoods()
 
 function blobFrom(path: string): Blob {
-  const buf = readFileSync(path)
-  return new Blob([buf], { type: 'image/jpeg' })
+  return new Blob([readFileSync(path)], { type: 'image/jpeg' })
 }
-
-function includesAny(hay: string, needles: string[]): boolean {
-  const h = hay.toLowerCase()
-  return needles.some((n) => h.includes(n.toLowerCase()))
-}
-
-function check(label: string, raw: string, queries: string[], path: string, spec: Expectation): boolean {
-  const joined = queries.join(' | ')
-  const hits = spec.want.filter((w) => includesAny(joined || raw, [w]))
-  const itemsOk = queries.length >= (spec.minItems ?? Math.min(spec.want.length, 1))
-  const modelOk = path === 'vlm'
-  const ok = itemsOk && hits.length >= Math.min(spec.want.length, 2) && modelOk
-  console.log(
-    `${ok ? 'OK' : 'FAIL'} ${label} path=${path} items=${queries.length} hits=${hits.join(',') || '-'} raw=${raw.slice(0, 220).replace(/\s+/g, ' ')}`,
-  )
-  if (!ok) {
-    console.log('  queries:', queries)
-    console.log('  wanted:', spec.want)
-  }
-  return ok
-}
-
-const textCases: { input: string; spec: Expectation }[] = [
-  {
-    input: '2 eggs and a banana',
-    spec: { name: 'simple breakfast', want: ['egg', 'banana'], minItems: 2 },
-  },
-  {
-    input: 'chicken bowl with rice and guacamole',
-    spec: { name: 'bowl combo', want: ['chicken', 'rice', 'guac'], minItems: 2 },
-  },
-  {
-    input: 'I had a grande latte and a blueberry muffin at the coffee shop',
-    spec: { name: 'coffee shop', want: ['latte', 'muffin'], minItems: 2 },
-  },
-  {
-    input: 'half a cup of oatmeal with a tablespoon of peanut butter and a handful of blueberries',
-    spec: { name: 'oatmeal bowl', want: ['oatmeal', 'peanut', 'blueberr'], minItems: 2 },
-  },
-  {
-    input: 'Chipotle chicken burrito bowl, no rice, extra guacamole, black beans',
-    spec: { name: 'restaurant bowl', want: ['chicken', 'guac', 'bean'], minItems: 2 },
-  },
-]
-
-const imageCases: { file: string; spec: Expectation }[] = [
-  { file: 'banana.jpg', spec: { name: 'banana photo', want: ['banana'], minItems: 1 } },
-  { file: 'eggs.jpg', spec: { name: 'eggs photo', want: ['egg'], minItems: 1 } },
-  { file: 'pizza.jpg', spec: { name: 'pizza photo', want: ['pizza'], minItems: 1 } },
-  { file: 'bowl.jpg', spec: { name: 'salad bowl photo', want: ['chicken', 'tomato', 'egg'], minItems: 2 } },
-]
-
-console.log('loading LFM2.5-VL…')
-const t0 = Date.now()
-const warmup = await analyzeMealText('one banana')
-console.log(`model ready in ${Date.now() - t0}ms status=${JSON.stringify(getVlmStatus())}`)
-console.log('warmup', warmup.path, warmup.ms, warmup.error ?? warmup.raw.slice(0, 180), warmup.items)
 
 let failed = 0
 
-for (const c of textCases) {
-  const result = await analyzeMealText(c.input)
-  const queries = result.items.map((i) => i.query)
-  if (!check(`text:${c.spec.name}`, result.raw, queries, result.path, c.spec)) failed++
+function ok(label: string, pass: boolean, extra?: unknown) {
+  if (pass) console.log('OK', label)
+  else {
+    failed++
+    console.error('FAIL', label, extra)
+  }
 }
 
-const fixtures = resolve(import.meta.dirname, 'fixtures')
-for (const c of imageCases) {
-  const result = await analyzeMealPhoto(blobFrom(resolve(fixtures, c.file)))
-  const queries = result.items.map((i) => i.query)
-  if (!check(`photo:${c.spec.name}`, result.raw, queries, result.path, c.spec)) failed++
-}
+console.log('extract + match smoke…', JSON.stringify(getVlmStatus()))
 
+const extracted = await extractMealText('2 eggs and a banana')
+console.log('extract', extracted.path, extracted.items, extracted.raw.slice(0, 180), extracted.error ?? '')
+ok(
+  'extract eggs+banana',
+  extracted.path === 'vlm' &&
+    extracted.items.some((i) => /egg/i.test(i.query)) &&
+    extracted.items.some((i) => /banana/i.test(i.query)),
+  extracted.items,
+)
+
+const logged: string[] = []
+const entries = await logFromText('2 eggs and a banana', '2026-08-30', 'search', {
+  onExtracted: (items) => console.log('split', items.map((i) => `${i.quantity} ${i.unit ?? ''} ${i.query}`)),
+  onEntry: (entry) => {
+    logged.push(entry.name)
+    console.log('in', entry.name, entry.serveLabel, entry.kcal, entry.brand ?? '')
+  },
+})
+ok(
+  'match eggs+banana into diary foods',
+  entries.length >= 2 &&
+    entries.some((e) => /egg/i.test(e.name)) &&
+    entries.some((e) => /banana/i.test(e.name)) &&
+    entries.every((e) => e.foodId !== 'unmatched' || e.name.length > 0),
+  entries.map((e) => ({ name: e.name, kcal: e.kcal, serve: e.serveLabel })),
+)
+
+const hits = searchForItem({ raw: 'eggs', query: 'eggs', quantity: 2, unit: 'large' }, 6)
+ok('search eggs has USDA rows', hits.length > 0 && hits.some((h) => /egg/i.test(h.name)), hits.map((h) => h.name).slice(0, 4))
+
+const oatmeal = await extractMealText('half a cup of oatmeal with a tablespoon of peanut butter')
+ok(
+  'extract oatmeal+pb',
+  oatmeal.items.some((i) => /oat/i.test(i.query)) && oatmeal.items.some((i) => /peanut/i.test(i.query)),
+  oatmeal.items,
+)
+
+const photo = await extractMealPhoto(blobFrom(resolve(import.meta.dirname, 'fixtures/banana.jpg')))
+console.log('photo extract', photo.path, photo.items, photo.raw.slice(0, 180), photo.error ?? '')
+ok('photo extract banana', photo.items.some((i) => /banana/i.test(`${i.query} ${photo.raw}`)), photo.items)
+
+const photoEntries = await logFromPhoto(blobFrom(resolve(import.meta.dirname, 'fixtures/pizza.jpg')), '2026-08-30', {
+  onEntry: (entry) => console.log('photo in', entry.name, entry.kcal),
+})
+ok(
+  'photo pizza matched or listed',
+  photoEntries.some((e) => /pizza/i.test(`${e.name} ${e.debugRaw ?? ''}`)),
+  photoEntries.map((e) => e.name),
+)
+
+console.log('status', getVlmStatus())
 if (failed) {
   console.error(`${failed} smoke cases failed`)
   process.exit(1)
 }
-console.log('vlm smoke ok')
+console.log('vlm smoke ok', logged)

@@ -1,55 +1,45 @@
 import { useEffect, useRef, useState } from 'react'
-import { logFromPhoto, logFromText } from '../lib/pipeline'
+import { isQuickCalorie } from '../lib/extract'
 import { canListen, listen, type SpeechHandle } from '../lib/speech'
-import { getVlmStatus, subscribeVlm, warmupVlm } from '../lib/vlm'
-import type { LogEntry } from '../types'
+import { warmupVlm } from '../lib/vlm'
 
 export type LogKind = 'search' | 'voice' | 'photo'
 
+export type QueuePayload =
+  | { kind: 'text'; text: string; source: 'search' | 'voice' }
+  | { kind: 'photo'; file: File }
+
 type Props = {
   kind: LogKind
-  date: string
   onClose: () => void
-  onLog: (entries: LogEntry[]) => void
+  onQueue: (payload: QueuePayload) => void
+  onQuick?: (kcal: number, raw: string) => void
 }
 
-export function LogOverlay({ kind, date, onClose, onLog }: Props) {
+export function LogOverlay({ kind, onClose, onQueue, onQuick }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const rec = useRef<SpeechHandle | null>(null)
   const [query, setQuery] = useState('')
-  const [preview, setPreview] = useState<string | null>(null)
   const voiceOk = kind !== 'voice' || canListen()
-  const [phase, setPhase] = useState<'compose' | 'listening' | 'working' | 'error'>(() => {
+  const [phase, setPhase] = useState<'compose' | 'listening' | 'error'>(() => {
     if (kind === 'voice') return voiceOk ? 'listening' : 'error'
-    if (kind === 'photo') return 'working'
     return 'compose'
   })
-  const [status, setStatus] = useState(
-    kind === 'voice' ? 'Listening…' : kind === 'photo' ? 'Opening camera…' : 'What did you eat?',
-  )
-  const [pct, setPct] = useState(kind === 'search' ? 0 : 8)
   const [error, setError] = useState(voiceOk ? '' : 'Voice is not available in this browser.')
-  const [vlmPct, setVlmPct] = useState(() => getVlmStatus().pct)
-
-  useEffect(() => subscribeVlm((s) => setVlmPct(s.pct)), [])
 
   useEffect(() => {
     warmupVlm()
     if (kind === 'photo') {
       const t = window.setTimeout(() => fileRef.current?.click(), 80)
-      return () => clearTimeout(t)
+      return () => window.clearTimeout(t)
     }
     if (kind === 'voice') {
       if (!canListen()) return
       rec.current = listen({
-        onPartial: (text) => {
-          setQuery(text)
-          setStatus(text)
-        },
+        onPartial: (text) => setQuery(text),
         onFinal: (text) => {
           rec.current = null
-          setQuery(text)
-          void runText(text, 'voice')
+          submitText(text, 'voice')
         },
         onError: (message) => {
           setPhase('error')
@@ -61,55 +51,18 @@ export function LogOverlay({ kind, date, onClose, onLog }: Props) {
     return undefined
   }, [kind])
 
-  async function runText(text: string, source: 'search' | 'voice') {
+  function submitText(text: string, source: 'search' | 'voice') {
     const trimmed = text.trim()
     if (!trimmed) return
-    setPhase('working')
-    setPct(12)
-    setStatus(trimmed)
-    try {
-      const entries = await logFromText(trimmed, date, source, (message, p) => {
-        setStatus(message)
-        if (p != null) setPct(p)
-      })
-      finish(entries)
-    } catch (err) {
-      setPhase('error')
-      setError(err instanceof Error ? err.message : 'Could not log that.')
-    }
-  }
-
-  async function runPhoto(file: File) {
-    if (preview) URL.revokeObjectURL(preview)
-    const url = URL.createObjectURL(file)
-    setPreview(url)
-    setPhase('working')
-    setPct(12)
-    setStatus('Looking at your photo…')
-    try {
-      const entries = await logFromPhoto(file, date, (message, p) => {
-        setStatus(message)
-        if (p != null) setPct(p)
-      })
-      finish(entries)
-    } catch (err) {
-      setPhase('error')
-      setError(err instanceof Error ? err.message : 'Could not read that photo.')
-    }
-  }
-
-  function finish(entries: LogEntry[]) {
-    if (!entries.length) {
-      setPhase('error')
-      setError('Nothing to log. Try again.')
+    const quick = isQuickCalorie(trimmed)
+    if (quick != null && onQuick) {
+      onQuick(quick, trimmed)
+      onClose()
       return
     }
-    setPct(100)
-    onLog(entries)
+    onQueue({ kind: 'text', text: trimmed, source })
     onClose()
   }
-
-  const bar = phase === 'working' ? Math.max(pct, getVlmStatus().state === 'downloading' ? vlmPct * 0.7 : pct) : pct
 
   return (
     <div className="log-overlay" role="dialog" aria-label="Log food">
@@ -119,7 +72,7 @@ export function LogOverlay({ kind, date, onClose, onLog }: Props) {
 
       {kind === 'photo' && (
         <div className="log-media">
-          {preview ? <img src={preview} alt="Meal" /> : <span>Take or choose a photo</span>}
+          <span>Take or choose a photo</span>
         </div>
       )}
 
@@ -132,12 +85,12 @@ export function LogOverlay({ kind, date, onClose, onLog }: Props) {
         </div>
       )}
 
-      {kind === 'search' && phase === 'compose' && (
+      {kind === 'search' && (
         <form
           className="log-compose"
           onSubmit={(e) => {
             e.preventDefault()
-            void runText(query, 'search')
+            submitText(query, 'search')
           }}
         >
           <input
@@ -152,24 +105,14 @@ export function LogOverlay({ kind, date, onClose, onLog }: Props) {
         </form>
       )}
 
-      {(kind !== 'search' || phase !== 'compose') && (
-        <p className="log-copy">{error || query || status}</p>
-      )}
-
-      {(phase === 'working' || (kind === 'voice' && phase === 'listening')) && (
-        <div className="progress log-progress" aria-valuenow={bar}>
-          <i style={{ width: `${phase === 'listening' ? 18 : bar}%` }} />
-        </div>
-      )}
+      {kind !== 'search' && <p className="log-copy">{error || query || (kind === 'voice' ? 'Listening…' : 'Opening camera…')}</p>}
 
       <p className="log-sub">
-        {phase === 'working'
-          ? status
-          : phase === 'listening'
+        {phase === 'error'
+          ? 'Try again or type it'
+          : kind === 'voice'
             ? 'Speak your meal'
-            : phase === 'error'
-              ? 'Try again or type it'
-              : 'On-device model · logs straight to Today'}
+            : 'Logs in the background · keep adding'}
       </p>
 
       <input
@@ -184,7 +127,8 @@ export function LogOverlay({ kind, date, onClose, onLog }: Props) {
             onClose()
             return
           }
-          void runPhoto(file)
+          onQueue({ kind: 'photo', file })
+          onClose()
         }}
       />
     </div>

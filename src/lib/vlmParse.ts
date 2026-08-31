@@ -1,65 +1,82 @@
 import { extractFoods } from './extract'
 import type { ExtractedItem } from '../types'
 
-export type ToolCall = {
-  query: string
-  quantity: number
+export type ChatPart = { type?: string; text?: string }
+export type ChatMessage = { role: string; content: string | ChatPart[] }
+
+export type PickDecision = {
+  index: number | null
+  name: string | null
+  brand: string | null
   unit: string | null
+  quantity: number
 }
 
-export const SEARCH_FOODS_TOOL = {
-  name: 'search_foods',
-  description: 'Look up one food or drink in the local USDA database and log it.',
-  parameters: {
-    type: 'object',
-    properties: {
-      query: {
-        type: 'string',
-        description: 'Short common grocery name, e.g. banana, grilled chicken, brown rice, latte',
-      },
-      quantity: {
-        type: 'number',
-        description: 'How much was eaten. Default 1.',
-      },
-      unit: {
-        type: 'string',
-        description: 'Optional unit such as medium, large, slice, cup, oz, g, bowl, tbsp, handful',
-      },
-    },
-    required: ['query'],
-  },
-} as const
+export const EXTRACT_SYSTEM = `You extract every food and drink from a meal.
+Reply with JSON only. No markdown, no prose.
+Format:
+{"foods":[{"name":"eggs","brand":null,"quantity":2,"unit":"large"},{"name":"banana","brand":null,"quantity":1,"unit":"medium"}]}
+Rules:
+- One object per distinct edible item. Split combos (chicken bowl with rice → chicken, rice).
+- name is a short grocery name.
+- brand is only set if the user or package named one, else null.
+- quantity is a number. unit is the closest household serving: large, medium, small, slice, cup, tbsp, tsp, oz, g, bowl, handful, can, bottle.
+- Fruit, drinks, snacks, and cooked dishes all count. Skip plates and utensils.
+- Do not invent calorie numbers.`
 
-export const VLM_TOOLS = [SEARCH_FOODS_TOOL]
+export const EXTRACT_PREFIX = '{"foods":['
 
-export const SYSTEM_PROMPT = `You are OpenCal's on-device food logger.
-List of tools: ${JSON.stringify(VLM_TOOLS)}
-Call search_foods once per distinct food or drink. Split combos into separate calls.
-query is a short grocery name. quantity is a number. unit is optional.
-Skip plates, utensils, and napkins. Do not invent calorie numbers.`
-
-export const PHOTO_SYSTEM_PROMPT = `You are OpenCal's food logger.
-Name every edible item in the photo, including fruit, drinks, snacks, and cooked dishes.
-Output a numbered list of short grocery names only. No other sentences.`
-
-export const PHOTO_USER_PROMPT = 'What foods are in this photo? Start with 1.'
-export const PHOTO_ASSISTANT_PREFIX = '1. '
-
-export const TEXT_FEWSHOT: { role: string; content: string }[] = [
+export const EXTRACT_FEWSHOT: ChatMessage[] = [
   { role: 'user', content: 'I ate a slice of pepperoni pizza and a coke' },
   {
     role: 'assistant',
     content:
-      '<|tool_call_start|>[search_foods(query="pepperoni pizza", quantity=1, unit="slice"), search_foods(query="coke", quantity=1)]<|tool_call_end|>',
+      '{"foods":[{"name":"pepperoni pizza","brand":null,"quantity":1,"unit":"slice"},{"name":"coke","brand":null,"quantity":1,"unit":"can"}]}',
   },
 ]
 
-export function textUserPrompt(meal: string): string {
-  return `Log this meal using search_foods tool calls:\n${meal}`
+export const PHOTO_EXTRACT_SYSTEM = `You extract every edible item in a photo, including fruit, drinks, snacks, and cooked dishes.
+Reply with JSON only:
+{"foods":[{"name":"banana","brand":null,"quantity":1,"unit":"medium"}]}
+Skip plates, utensils, and backgrounds.`
+
+export const PHOTO_EXTRACT_USER = 'What foods are in this photo? Estimate portions.'
+
+export const PICK_SYSTEM = `You pick the best local-database row for one logged food.
+You are given the user's meal, this item, and lettered hits with their serving size.
+Reply with JSON only:
+{"pick":"A","name":"Egg, whole, cooked, scrambled","brand":null,"unit":"large","quantity":2}
+Rules:
+- pick is the letter of the closest food, or null if none match.
+- name and brand must come from the chosen row (or the user's item if pick is null).
+- unit is the serving unit from that row that best matches what the user ate (large, cup, slice, g, …).
+- quantity is how many of THAT serving the user ate, not grams.
+  Example: user ate 2 large eggs, row serving is 1 large → quantity 2.
+  Example: user ate half a cup, row serving is 1 cup → quantity 0.5.
+- Prefer everyday cooked/raw foods over baby food, ingredients, or odd variants.`
+
+export const PICK_PREFIX = '{"pick":'
+
+export function extractUserPrompt(meal: string): string {
+  return `Extract foods and estimated servings from this meal:\n${meal}`
 }
 
-type ChatPart = { type?: string; text?: string }
-type ChatMessage = { role: string; content: string | ChatPart[] }
+export function pickUserPrompt(opts: {
+  meal: string
+  item: ExtractedItem
+  lines: string[]
+}): string {
+  const brand = opts.item.brand ? ` brand ${opts.item.brand}` : ''
+  const portion = [opts.item.quantity, opts.item.unit].filter(Boolean).join(' ')
+  return [
+    `Meal: ${opts.meal}`,
+    `Item: ${opts.item.query}${brand}${portion ? `, about ${portion}` : ''}`,
+    'Database hits:',
+    ...opts.lines,
+    'None. no match',
+    'Pick the closest row and how many of its servings were eaten.',
+  ].join('\n')
+}
 
 /** LFM ChatML without Jinja — transformers.js cannot parse `{% generation %}`. */
 export function formatChatPrompt(
@@ -70,9 +87,7 @@ export function formatChatPrompt(
   const parts = ['<|startoftext|>']
   for (const message of messages) {
     const body = Array.isArray(message.content)
-      ? message.content
-          .map((p) => (p.type === 'image' ? '<image>' : (p.text ?? '')))
-          .join('')
+      ? message.content.map((p) => (p.type === 'image' ? '<image>' : (p.text ?? ''))).join('')
       : message.content
     parts.push(`<|im_start|>${message.role}\n${body}<|im_end|>\n`)
   }
@@ -80,199 +95,172 @@ export function formatChatPrompt(
   return parts.join('')
 }
 
-function toCall(query: unknown, quantity: unknown, unit: unknown): ToolCall | null {
-  const q = String(query ?? '').trim()
-  if (!q) return null
-  const n = Number(quantity)
-  return {
-    query: q,
-    quantity: Number.isFinite(n) && n > 0 ? n : 1,
-    unit: unit != null && String(unit).trim() && String(unit).trim().toLowerCase() !== 'none' ? String(unit).trim() : null,
-  }
-}
-
-function parseScalar(raw: string): string | number | boolean | null {
-  const s = raw.trim()
-  if (!s || s === 'None' || s === 'null') return null
-  if (s === 'true') return true
-  if (s === 'false') return false
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    return s.slice(1, -1).replace(/\\(["'\\])/g, '$1')
-  }
-  if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s)
-  return s
-}
-
-function parseKwargs(argStr: string): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  const re =
-    /([A-Za-z_]\w*)\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*'|-?\d+(?:\.\d+)?|true|false|None|null|[A-Za-z_][\w-]*)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(argStr))) {
-    out[m[1]] = parseScalar(m[2])
-  }
-  return out
-}
-
-function parsePythonToolCalls(text: string): ToolCall[] {
-  const calls: ToolCall[] = []
-  const re = /search_foods\s*\(([\s\S]*?)\)/gi
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text))) {
-    const args = parseKwargs(m[1])
-    const call = toCall(args.query ?? args.name ?? args.food, args.quantity ?? args.qty ?? args.amount, args.unit)
-    if (call) calls.push(call)
-  }
-  return calls
-}
-
-function parseJsonObject(parsed: unknown): ToolCall[] {
-  if (!parsed || typeof parsed !== 'object') return []
-  const obj = parsed as {
-    tools?: { name?: string; arguments?: Record<string, unknown>; parameters?: Record<string, unknown> }[]
-    foods?: { query?: string; name?: string; quantity?: number; unit?: string }[]
-    items?: { query?: string; name?: string; quantity?: number; unit?: string }[]
-    query?: string
-    name?: string
-    quantity?: number
-    unit?: string
-    arguments?: Record<string, unknown>
-  }
-
-  const fromTools = (obj.tools ?? [])
-    .filter((t) => !t.name || t.name === 'search_foods')
-    .map((t) => {
-      const args = t.arguments ?? t.parameters ?? {}
-      return toCall(args.query ?? args.name, args.quantity ?? args.qty, args.unit)
-    })
-    .filter((c): c is ToolCall => !!c)
-  if (fromTools.length) return fromTools
-
-  const list = obj.foods ?? obj.items
-  if (list?.length) {
-    return list
-      .map((f) => toCall(f.query ?? f.name, f.quantity, f.unit))
-      .filter((c): c is ToolCall => !!c)
-  }
-  if (obj.query || obj.name) {
-    const call = toCall(obj.query ?? obj.name, obj.quantity, obj.unit)
-    return call ? [call] : []
-  }
-  if (obj.arguments) {
-    const call = toCall(obj.arguments.query ?? obj.arguments.name, obj.arguments.quantity, obj.arguments.unit)
-    return call ? [call] : []
-  }
-  return []
+export function stripSpecialTokens(text: string): string {
+  return text.replace(/<\|[^>]+?\|>/g, '').trim()
 }
 
 function jsonBlobs(text: string): string[] {
+  const trimmed = stripSpecialTokens(text)
   const blobs: string[] = []
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced) blobs.push(fenced[1])
-  const firstBrace = text.indexOf('{')
-  const lastBrace = text.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace) blobs.push(text.slice(firstBrace, lastBrace + 1))
-  const firstArr = text.indexOf('[')
-  const lastArr = text.lastIndexOf(']')
-  if (firstArr >= 0 && lastArr > firstArr) blobs.push(text.slice(firstArr, lastArr + 1))
-  blobs.push(text.trim())
+  const firstBrace = trimmed.indexOf('{')
+  const lastBrace = trimmed.lastIndexOf('}')
+  if (firstBrace >= 0 && lastBrace > firstBrace) blobs.push(trimmed.slice(firstBrace, lastBrace + 1))
+  const firstArr = trimmed.indexOf('[')
+  const lastArr = trimmed.lastIndexOf(']')
+  if (firstArr >= 0 && lastArr > firstArr) blobs.push(trimmed.slice(firstArr, lastArr + 1))
+  blobs.push(trimmed)
   return blobs
 }
 
-const NON_FOOD = /\b(background|plate|platter|bowl only|cutting board|table|tableware|utensil|fork|knife|spoon|napkin|flower|camera|hand|person|surface|wooden|maker|appliance|board)\b/i
-
-function parseNumberedFoods(text: string): ToolCall[] {
-  const calls: ToolCall[] = []
-  const re = /(?:^|\n)\s*(?:\d+[.)]\s+|[-*•]\s+)([^\n]+)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(stripSpecialTokens(text)))) {
-    const name = m[1].replace(/[*_]/g, '').replace(/\s*\([^)]*\)\s*/g, ' ').trim()
-    if (!name || name.length > 48 || name.split(/\s+/).length > 8 || NON_FOOD.test(name)) continue
-    const extracted = extractFoods(name)[0]
-    const call = extracted
-      ? toCall(extracted.query, extracted.quantity, extracted.unit)
-      : toCall(name, 1, null)
-    if (call) calls.push(call)
+function parseJsonLoose(text: string): unknown | null {
+  for (const blob of jsonBlobs(text)) {
+    try {
+      return JSON.parse(blob)
+    } catch {
+      const closed = blob.replace(/,(\s*[}\]])/g, '$1')
+      try {
+        return JSON.parse(closed)
+      } catch {
+        // try next
+      }
+    }
   }
-  return calls
+  return null
 }
 
-function expandCombined(calls: ToolCall[]): ToolCall[] {
-  if (calls.length !== 1) return calls
-  const only = calls[0]
-  if (!/\b(?:and|with|,)\b/i.test(only.query)) return calls
+function num(value: unknown, fallback = 1): number {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+
+function str(value: unknown): string | null {
+  if (value == null) return null
+  const s = String(value).trim()
+  if (!s || s.toLowerCase() === 'null' || s.toLowerCase() === 'none') return null
+  return s
+}
+
+export function parseExtractedFoods(text: string, fallbackText?: string): ExtractedItem[] {
+  const attempts = [text, `${EXTRACT_PREFIX}${text}`]
+  for (const attempt of attempts) {
+    const parsed = parseJsonLoose(attempt)
+    const rows: ExtractedItem[] = []
+    const list = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === 'object'
+        ? ((parsed as { foods?: unknown[]; items?: unknown[] }).foods ??
+          (parsed as { items?: unknown[] }).items ??
+          [])
+        : []
+    for (const row of list) {
+      if (typeof row === 'string') {
+        if (row.trim()) rows.push({ raw: text, query: row.trim(), quantity: 1, unit: null })
+        continue
+      }
+      if (!row || typeof row !== 'object') continue
+      const r = row as { name?: string; query?: string; food?: string; brand?: string; quantity?: number; unit?: string }
+      const query = str(r.query ?? r.name ?? r.food)
+      if (!query) continue
+      rows.push({
+        raw: text,
+        query,
+        brand: str(r.brand),
+        quantity: num(r.quantity),
+        unit: str(r.unit),
+      })
+    }
+    if (rows.length) return expandCombined(rows)
+  }
+
+  const listed = parseNumberedFoods(text)
+  if (listed.length) return listed
+  if (fallbackText) return extractFoods(fallbackText)
+  return extractFoods(stripSpecialTokens(text))
+}
+
+function expandCombined(items: ExtractedItem[]): ExtractedItem[] {
+  if (items.length !== 1) return items
+  const only = items[0]
+  if (!/\b(?:and|with|,)\b/i.test(only.query)) return items
   const split = extractFoods(only.query)
-  if (split.length < 2) return calls
+  if (split.length < 2) return items
   return split.map((item) => ({
-    query: item.query,
+    ...item,
+    brand: only.brand,
     quantity: item.quantity * only.quantity,
     unit: item.unit ?? only.unit,
+    raw: only.raw,
   }))
 }
 
-function parseToolCallsInner(text: string): ToolCall[] {
-  const trimmed = text.trim()
-  if (!trimmed) return []
+const NON_FOOD =
+  /\b(background|plate|platter|cutting board|table|tableware|utensil|fork|knife|spoon|napkin|flower|camera|hand|person|surface|wooden|maker|appliance|board)\b/i
 
-  const native: ToolCall[] = []
-  const blocks = trimmed.matchAll(/<\|tool_call_start\|>([\s\S]*?)<\|tool_call_end\|>/g)
-  for (const block of blocks) native.push(...parsePythonToolCalls(block[1]))
-  if (native.length) return native
-
-  const python = parsePythonToolCalls(trimmed)
-  if (python.length) return python
-
-  const listed = parseNumberedFoods(trimmed)
-  if (listed.length) return listed
-
-  for (const blob of jsonBlobs(trimmed)) {
-    try {
-      const parsed = JSON.parse(blob) as unknown
-      if (Array.isArray(parsed)) {
-        const fromArr = parsed
-          .map((row) => {
-            if (typeof row === 'string') return toCall(row, 1, null)
-            if (row && typeof row === 'object') {
-              const r = row as { name?: string; query?: string; arguments?: Record<string, unknown>; quantity?: number; unit?: string }
-              if (r.arguments) return toCall(r.arguments.query ?? r.arguments.name, r.arguments.quantity, r.arguments.unit)
-              return toCall(r.query ?? r.name, r.quantity, r.unit)
-            }
-            return null
-          })
-          .filter((c): c is ToolCall => !!c)
-        if (fromArr.length) return fromArr
-      }
-      const fromObj = parseJsonObject(parsed)
-      if (fromObj.length) return fromObj
-    } catch {
-      // try next blob
-    }
+function parseNumberedFoods(text: string): ExtractedItem[] {
+  const items: ExtractedItem[] = []
+  const re = /(?:^|\n)\s*(?:\d+[.)]\s+|[-*•]\s+)([^\n]+)/g
+  let m: RegExpExecArray | null
+  const cleaned = stripSpecialTokens(text)
+  while ((m = re.exec(cleaned))) {
+    const name = m[1]
+      .replace(/[*_]/g, '')
+      .replace(/\s*\([^)]*\)\s*/g, ' ')
+      .trim()
+    if (!name || name.length > 48 || name.split(/\s+/).length > 8 || NON_FOOD.test(name)) continue
+    const extracted = extractFoods(name)[0]
+    items.push({
+      raw: text,
+      query: extracted?.query || name,
+      quantity: extracted?.quantity ?? 1,
+      unit: extracted?.unit ?? null,
+    })
   }
-  return []
+  return items
 }
 
-export function parseToolCalls(text: string): ToolCall[] {
-  return expandCombined(parseToolCallsInner(text))
-}
-
-export function itemsFromModelText(raw: string, fallbackText?: string): ExtractedItem[] {
-  const calls = parseToolCalls(stripSpecialTokens(raw))
-  if (calls.length) {
-    return calls.map((c) => ({
-      raw,
-      query: c.query,
-      quantity: c.quantity,
-      unit: c.unit,
-    }))
+export function parsePick(text: string, hitCount: number): PickDecision {
+  const labeled = text.trim().startsWith('{') ? text : `${PICK_PREFIX}${text}`
+  const parsed = parseJsonLoose(labeled)
+  const fallback: PickDecision = { index: null, name: null, brand: null, unit: null, quantity: 1 }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const letter = stripSpecialTokens(text).trim().match(/^([A-Ha-h]|none|null)$/i)
+    if (letter) return { ...fallback, index: letterIndex(letter[1], hitCount) }
+    return fallback
   }
-  const fromRaw = extractFoods(raw)
-  if (fromRaw.length && raw.trim()) return fromRaw
-  return fallbackText ? extractFoods(fallbackText) : []
+  const obj = parsed as {
+    pick?: unknown
+    id?: unknown
+    name?: unknown
+    brand?: unknown
+    unit?: unknown
+    quantity?: unknown
+  }
+  return {
+    index: letterIndex(obj.pick ?? obj.id, hitCount),
+    name: str(obj.name),
+    brand: str(obj.brand),
+    unit: str(obj.unit),
+    quantity: num(obj.quantity),
+  }
 }
 
-export function stripSpecialTokens(text: string): string {
-  return text
-    .replace(/<\|[^>]+?\|>/g, '')
-    .replace(/<\|im_end\|>/g, '')
-    .trim()
+function letterIndex(value: unknown, hitCount: number): number | null {
+  if (value == null) return null
+  if (typeof value === 'number' && value >= 0 && value < hitCount) return value
+  const s = String(value).trim()
+  if (!s || /^(none|null|no)$/i.test(s)) return null
+  if (/^\d+$/.test(s)) {
+    const n = Number(s)
+    if (n >= 0 && n < hitCount) return n
+    if (n >= 1 && n <= hitCount) return n - 1
+    return null
+  }
+  const ch = s.toUpperCase()
+  if (ch.length === 1 && ch >= 'A' && ch <= 'Z') {
+    const i = ch.charCodeAt(0) - 65
+    return i >= 0 && i < hitCount ? i : null
+  }
+  return null
 }
