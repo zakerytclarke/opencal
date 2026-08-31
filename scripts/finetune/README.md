@@ -1,7 +1,8 @@
 # Fine-tune OpenCal's on-device VLM
 
 Target: `LiquidAI/LFM2.5-VL-450M` (same family as the in-app ONNX build).
-Primary metric: **meal calorie MAE / WAPE** after extract → host USDA map → `convert_portion`, scored against Nutrition5k dish totals (kcal + protein/carbs/fat). Name accuracy is secondary.
+Photo path: **identify names/brands** → host USDA RAG (serving grams) → **portion JSON** (name, brand, quantity, unit) → `convert_portion`.
+Primary metric: **calorie MAPE on Nutrition5k meals ≥50 kcal**, plus WAPE. Target: MAPE **< 30%**. Name accuracy is secondary.
 The model extracts name, brand, quantity, and unit. It must not invent calories or pick a catalog letter. Coach mix keeps chat/Q&A with USDA citations.
 
 ## Datasets
