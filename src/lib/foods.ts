@@ -19,7 +19,10 @@ export async function loadFoods(): Promise<Food[]> {
     const res = await fetch(`${base}foods.json`)
     if (!res.ok) throw new Error('Could not load the food database')
     const data = (await res.json()) as FoodFile
-    foods = data.foods
+    foods = data.foods.map((f) => ({
+      ...f,
+      visibility: f.visibility === 'search' || f.visibility === 'ref' ? f.visibility : classifyVisibility(f),
+    }))
     byId = new Map(foods.map((f) => [f.id, f]))
     search = new MiniSearch<Food>({
       fields: ['name', 'aliasesText', 'category'],
@@ -45,12 +48,16 @@ export function foodCount(): number {
   return foods.length
 }
 
+export function catalogCount(): number {
+  return foods.filter((f) => f.visibility === 'search').length
+}
+
 export const USDA_FDC = 'https://fdc.nal.usda.gov/'
 export const USDA_DATASETS = 'https://fdc.nal.usda.gov/download-datasets'
 export const USDA_DOCS = 'https://fdc.nal.usda.gov/data-documentation'
 
 export function fdcIdFromFoodId(id: string): string | null {
-  const m = /^(?:fndds|foundation|sr)-(\d+)$/.exec(id)
+  const m = /^(?:fndds|foundation|sr|branded)-(\d+)$/.exec(id)
   return m?.[1] ?? null
 }
 
@@ -58,6 +65,7 @@ export function foodSourceLabel(id: string): string {
   if (id.startsWith('fndds-')) return 'USDA FNDDS'
   if (id.startsWith('foundation-')) return 'USDA Foundation'
   if (id.startsWith('sr-')) return 'USDA SR Legacy'
+  if (id.startsWith('branded-')) return 'USDA Branded'
   if (id.startsWith('extra-')) return 'Compiled'
   return 'USDA'
 }
@@ -108,6 +116,44 @@ function isProduceGarnishRow(food: Food): boolean {
 
 function userAskedSmallBit(item: ExtractedItem): boolean {
   return askedSmallUnit([item.raw, item.query].filter(Boolean).join(' '))
+}
+
+const REF_NAME =
+  /baby ?food|baby toddler|\binfant\b|as ingredient|for use (on|with)|topping from|dehydrated|usda commodity|imitation|not specified|as to form|as to fat|with added vegetables|ns as to|from other sources|for use as/
+const NICE_LABEL =
+  /\b(medium|small|large|extra large|extra small|slice|sandwich|bar|can|bottle|bowl|burrito|taco|cup|tbsp|tablespoon|tsp|egg|bagel|muffin|cookie|patty|fillet|container|pouch|grande|wrap|platter|nugget|pizza|piece|item|each|serving|scoops?)\b/
+const UGLY_LABEL = /refuse|yield from|quantity not|^1 fl oz$|^100 g$|fl oz \(with ice\)/
+const KEEP_SLICE = /pizza|bread|toast|bagel|muffin|bacon|nugget|pancake|waffle/
+const BRAND_HINT =
+  /\b(chobani|starbucks|mcdonald|kind |chipotle|applebee|burger king|trader joe|kellogg|general mills|pepsi|coca-cola|coke|quest |clif |fairlife|oatly|silk |fage|dannon|danone|hormel|tyson|barilla|chick-fil-a|taco bell|dunkin|subway|in-n-out)\b/
+
+/** Catalog foods people pick in search. Everything else is matcher-only. */
+export function classifyVisibility(food: Pick<Food, 'name' | 'serveLabel' | 'serveG' | 'kcal' | 'source'>): Food['visibility'] {
+  if (food.source === 'compiled' || food.source === 'branded') return 'search'
+  const name = food.name
+  const label = food.serveLabel
+  const grams = food.serveG
+  if (food.kcal < 5) return 'ref'
+  if (REF_NAME.test(name.toLowerCase())) return 'ref'
+  if (name.length > 64) return 'ref'
+  const raccOk = /racc/i.test(label) && grams >= 40 && grams <= 220
+  if (UGLY_LABEL.test(label.toLowerCase()) && !raccOk) return 'ref'
+  if ((name.match(/,/g) ?? []).length >= 3 && !BRAND_HINT.test(name.toLowerCase()) && !NICE_LABEL.test(label.toLowerCase())) return 'ref'
+  const first = name.split(',')[0]?.trim() ?? ''
+  const branded = first === first.toUpperCase() && first.length > 3
+  if (branded && grams >= 30 && grams <= 650) return 'search'
+  if (BRAND_HINT.test(name.toLowerCase()) && grams >= 30 && grams <= 650) return 'search'
+  if (grams < 28) {
+    if (KEEP_SLICE.test(name.toLowerCase()) && /slice|piece/i.test(label) && grams >= 8) return 'search'
+    return 'ref'
+  }
+  if (grams > 650) return 'ref'
+  if (NICE_LABEL.test(label.toLowerCase()) || raccOk) return 'search'
+  return 'ref'
+}
+
+export function isCatalogFood(food: Food): boolean {
+  return food.visibility === 'search'
 }
 
 function rank(query: string, food: Food, miniScore: number): number {
@@ -190,11 +236,14 @@ function rank(query: string, food: Food, miniScore: number): number {
   if (/\bmuffin/.test(q) && /^(muffin|muffins),/.test(name)) score += 28
   if (/commercially prepared/.test(name) && words.some((w) => name.includes(w))) score += 12
   if (food.source === 'fndds') score += 10
-  if (food.source === 'compiled') score += 16
+  if (food.source === 'compiled' || food.source === 'branded') score += 16
+  if (food.visibility === 'search') score += 12
   return score
 }
 
-export function searchFoods(query: string, limit = 20): Food[] {
+export type FoodScope = 'search' | 'all'
+
+export function searchFoods(query: string, limit = 20, scope: FoodScope = 'all'): Food[] {
   if (!search || !query.trim()) return []
   const q = query.trim()
   const n = normalize(q)
@@ -224,6 +273,7 @@ export function searchFoods(query: string, limit = 20): Food[] {
   const seen = new Set<string>()
   for (const row of ranked) {
     if (seen.has(row.food.id)) continue
+    if (scope === 'search' && row.food.visibility === 'ref') continue
     seen.add(row.food.id)
     out.push(row.food)
     if (out.length >= limit) break
@@ -362,9 +412,12 @@ export function candidateLines(hits: Food[]): { key: string; food: Food; line: s
 
 export function searchForItem(item: ExtractedItem, limit = 8): Food[] {
   const q = [item.brand, item.query].filter(Boolean).join(' ')
-  const hits = searchFoods(q, limit)
+  const all = searchFoods(q, Math.max(limit * 4, 24), 'all')
+  const catalog = all.filter((f) => f.visibility === 'search')
+  const refs = all.filter((f) => f.visibility === 'ref')
+  const hits = [...catalog, ...refs].slice(0, limit)
   if (hits.length || !item.brand) return hits
-  return searchFoods(item.query, limit)
+  return searchForItem({ ...item, brand: null }, limit)
 }
 
 export function entryFromFood(

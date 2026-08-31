@@ -1,5 +1,35 @@
 #!/usr/bin/env python3
-"""Compile USDA Foundation + FNDDS + SR Legacy into a compact on-device food DB."""
+"""Compile USDA datasets into a compact on-device food DB.
+
+Sources we use, in order of how people actually log food:
+
+1. Compiled extras (`scripts/food-extras.json` + EXTRAS below)
+   Everyday names and household servings (1 medium banana, 1 KIND bar).
+   These are always `visibility: search`.
+
+2. USDA Branded Foods (optional dump in /tmp/opencal-usda)
+   Grocery / package labels: KIND, Chobani, boxed cereal, cans.
+   Filter hard — the dump is ~1.5M SKUs / 3 GB unzipped.
+   Download: https://fdc.nal.usda.gov/download-datasets.html
+   Place `FoodData_Central_branded_food_json_*.json` (or a folder of shards)
+   next to the other USDA files. Always `visibility: search`.
+
+3. USDA FNDDS / Foundation / SR Legacy
+   Nutrition reference. Rows with a nice name + household serving are
+   `visibility: search` (the catalog people type into). Garnish slices,
+   lab stubs, baby food, and 100 g-only rows are `visibility: ref` and
+   stay available to the on-device matcher, not the search UI.
+
+Restaurant bowls and sandwiches are rarely in Branded Foods (no UPC).
+Add those to food-extras.json from the chain's published facts.
+
+Open Food Facts is a future grocery source (CC-BY-SA, must attribute).
+Do not scrape proprietary apps.
+
+Usage:
+  python3 scripts/build-food-db.py              # full rebuild from /tmp/opencal-usda
+  python3 scripts/build-food-db.py --label-only  # relabel + merge extras into public/foods.json
+"""
 
 from __future__ import annotations
 
@@ -11,6 +41,7 @@ from pathlib import Path
 
 SRC = Path("/tmp/opencal-usda")
 OUT = Path(__file__).resolve().parents[1] / "public" / "foods.json"
+EXTRAS_FILE = Path(__file__).resolve().parent / "food-extras.json"
 
 NUTRIENT_IDS = {
     1008: "kcal",
@@ -184,6 +215,105 @@ def best_portion(item: dict) -> tuple[float, str]:
     return scored[0][1], scored[0][2]
 
 
+REF_NAME = re.compile(
+    r"baby ?food|baby toddler|\binfant\b|as ingredient|for use (on|with)|topping from|"
+    r"dehydrated|usda commodity|imitation|not specified|as to form|as to fat|"
+    r"with added vegetables|ns as to|from other sources|for use as",
+    re.I,
+)
+NICE_LABEL = re.compile(
+    r"\b(medium|small|large|extra large|extra small|slice|sandwich|bar|can|bottle|"
+    r"bowl|burrito|taco|cup|tbsp|tablespoon|tsp|egg|bagel|muffin|cookie|patty|"
+    r"fillet|container|pouch|grande|wrap|platter|nugget|pizza|"
+    r"piece|item|each|serving|scoops?)\b",
+    re.I,
+)
+UGLY_LABEL = re.compile(r"refuse|yield from|quantity not|^1 fl oz$|^100 g$|fl oz \(with ice\)", re.I)
+KEEP_SLICE = re.compile(r"pizza|bread|toast|bagel|muffin|bacon|nugget|pancake|waffle", re.I)
+BRAND_HINT = re.compile(
+    r"\b(chobani|starbucks|mcdonald|kind |chipotle|applebee|burger king|trader joe|"
+    r"kellogg|general mills|pepsi|coca-cola|coke|quest |clif |fairlife|oatly|"
+    r"silk |fage|dannon|danone|hormel|tyson|barilla|chick-fil-a|taco bell|"
+    r"dunkin|subway|in-n-out)\b",
+    re.I,
+)
+
+# Popular brand owners to keep from the huge USDA branded dump.
+BRANDED_ALLOW = {
+    "kind inc",
+    "kind llc",
+    "chobani llc",
+    "chobani",
+    "the coca-cola company",
+    "pepsico",
+    "pepsico, inc.",
+    "general mills",
+    "kellogg",
+    "kellogg company",
+    "nestle usa",
+    "nestlé usa, inc.",
+    "danone",
+    "dannon",
+    "fairlife",
+    "the hain celestial group",
+    "clif bar & company",
+    "quest nutrition",
+    "hormel foods",
+    "tyson foods",
+    "barilla",
+    "campbell soup company",
+    "the j.m. smucker company",
+    "conagra",
+    "kraft heinz",
+    "unilever",
+    "starbucks coffee company",
+    "dunkin",
+}
+
+
+def classify_visibility(food: dict) -> str:
+    """search = catalog UI. ref = LLM / matcher only."""
+    source = food.get("source") or ""
+    if source in ("compiled", "branded"):
+        return "search"
+    name = food.get("name") or ""
+    label = food.get("serveLabel") or ""
+    grams = float(food.get("serveG") or 0)
+    kcal = float(food.get("kcal") or 0)
+    if kcal < 5:
+        return "ref"
+    if REF_NAME.search(name):
+        return "ref"
+    if len(name) > 64:
+        return "ref"
+    racc_ok = "racc" in label.lower() and 40 <= grams <= 220
+    if UGLY_LABEL.search(label) and not racc_ok:
+        return "ref"
+    if name.count(",") >= 3 and not BRAND_HINT.search(name) and not NICE_LABEL.search(label):
+        return "ref"
+    first = name.split(",")[0].strip()
+    branded = first.isupper() and len(first) > 3
+    if branded and 30 <= grams <= 650:
+        return "search"
+    if BRAND_HINT.search(name) and 30 <= grams <= 650:
+        return "search"
+    if grams < 28:
+        if KEEP_SLICE.search(name) and re.search(r"slice|piece", label, re.I) and grams >= 8:
+            return "search"
+        return "ref"
+    if grams > 650:
+        return "ref"
+    if NICE_LABEL.search(label) or racc_ok:
+        return "search"
+    return "ref"
+
+
+def apply_visibility(foods: list[dict]) -> list[dict]:
+    for food in foods:
+        food["visibility"] = classify_visibility(food)
+    return foods
+
+
 def aliases_for(name: str) -> list[str]:
     n = titleish(name)
     aliases = set()
@@ -284,7 +414,6 @@ def add_extra(store: dict, row: tuple) -> None:
     name, kcal, p, c, f, fiber, sugar, serve_g, label, aliases = row
     key = norm(name)
     if key in store:
-        # still add aliases onto existing if present
         existing = store[key]
         existing["aliases"] = sorted(set(existing.get("aliases", [])) | set(aliases))
         return
@@ -306,13 +435,201 @@ def add_extra(store: dict, row: tuple) -> None:
     }
 
 
+def add_extra_record(store: dict, rec: dict) -> None:
+    name = rec.get("name") or ""
+    key = norm(name)
+    if not key:
+        return
+    aliases = list(rec.get("aliases") or [])
+    if key in store:
+        existing = store[key]
+        existing["aliases"] = sorted(set(existing.get("aliases", [])) | set(aliases))
+        return
+    store[key] = {
+        "id": rec.get("id") or f"extra-{key.replace(' ', '-')[:40]}",
+        "name": name,
+        "emoji": emoji_for(name),
+        "category": category_for(name),
+        "kcal": float(rec["kcal"]),
+        "protein": float(rec["protein"]),
+        "carbs": float(rec["carbs"]),
+        "fat": float(rec["fat"]),
+        "fiber": float(rec.get("fiber") or 0),
+        "sugar": float(rec.get("sugar") or 0),
+        "serveG": float(rec["serveG"]),
+        "serveLabel": rec.get("serveLabel") or "1 serving",
+        "source": "compiled",
+        "aliases": aliases,
+    }
+
+
+def merge_json_extras(store: dict) -> int:
+    if not EXTRAS_FILE.exists():
+        return 0
+    payload = json.loads(EXTRAS_FILE.read_text())
+    before = len(store)
+    for rec in payload.get("foods") or []:
+        add_extra_record(store, rec)
+    return len(store) - before
+
+
+def branded_paths() -> list[Path]:
+    hits: list[Path] = []
+    if not SRC.exists():
+        return hits
+    hits.extend(sorted(SRC.glob("FoodData_Central_branded_food_json_*.json")))
+    folder = SRC / "branded"
+    if folder.is_dir():
+        hits.extend(sorted(folder.glob("*.json")))
+    return hits
+
+
+def household_ok(text: str) -> bool:
+    t = (text or "").lower()
+    if not t or t in ("1 onz", "1 oz", "onz"):
+        return False
+    return bool(
+        re.search(
+            r"\b(bar|can|bottle|cup|container|pouch|slice|sandwich|bowl|taco|"
+            r"cookie|muffin|bagel|bottle|pack|serving|tbsp|tablespoon|piece|"
+            r"egg|scoop|wrap|burrito|grande|tall)\b",
+            t,
+        )
+    )
+
+
+def add_branded(store: dict, item: dict, per_brand: dict[str, int], cap: int = 24) -> None:
+    owner = (item.get("brandOwner") or item.get("brandName") or "").strip()
+    desc = (item.get("description") or "").strip()
+    if not desc:
+        return
+    owner_key = owner.lower()
+    allowed = any(a in owner_key or owner_key in a for a in BRANDED_ALLOW)
+    if not allowed:
+        return
+    country = (item.get("marketCountry") or "United States").lower()
+    if country and "united states" not in country and country not in ("us", "usa"):
+        return
+    nuts = nutrients(item)
+    if nuts["kcal"] <= 0:
+        return
+    serve = item.get("servingSize") or 0
+    unit = (item.get("servingSizeUnit") or "g").lower()
+    if unit in ("ml", "mlt"):
+        grams = float(serve) if serve else 0
+    elif unit in ("g", "grm", "gram", "grams"):
+        grams = float(serve) if serve else 0
+    else:
+        grams = float(serve) if serve else 0
+    if not (18 <= grams <= 600):
+        return
+    house = (item.get("householdServingFullText") or "").strip()
+    if not household_ok(house) and grams < 30:
+        return
+    if per_brand.get(owner_key, 0) >= cap:
+        return
+    brand = (item.get("brandName") or owner).strip()
+    pretty = titleish(desc.title() if desc.isupper() else desc)
+    name = f"{brand}, {pretty}" if brand and brand.lower() not in pretty.lower() else pretty
+    key = norm(name)
+    if key in store:
+        return
+    fdc = item.get("fdcId")
+    if not fdc:
+        return
+    label = house or f"{grams:g} g"
+    store[key] = {
+        "id": f"branded-{fdc}",
+        "name": name[:80],
+        "emoji": emoji_for(name),
+        "category": category_for(name, item.get("brandedFoodCategory") or ""),
+        "kcal": round(nuts["kcal"], 1),
+        "protein": round(nuts["protein"], 2),
+        "carbs": round(nuts["carbs"], 2),
+        "fat": round(nuts["fat"], 2),
+        "fiber": round(nuts["fiber"], 2),
+        "sugar": round(nuts["sugar"], 2),
+        "serveG": round(grams, 1),
+        "serveLabel": label,
+        "source": "branded",
+        "aliases": aliases_for(name) + ([brand.lower()] if brand else []),
+    }
+    per_brand[owner_key] = per_brand.get(owner_key, 0) + 1
+
+
+def ingest_branded(store: dict) -> int:
+    paths = branded_paths()
+    if not paths:
+        print(" no USDA branded dump (optional)")
+        return 0
+    before = len(store)
+    per_brand: dict[str, int] = {}
+    for path in paths:
+        data = load_json(path)
+        rows = data.get("BrandedFoods") or data.get("brandedFoods") or []
+        if isinstance(data, list):
+            rows = data
+        for item in rows:
+            add_branded(store, item, per_brand)
+    print(f" after branded: {len(store)} (+{len(store) - before})")
+    return len(store) - before
+
+
+def write_foods(foods: list[dict]) -> None:
+    foods = apply_visibility(sorted((f for f in foods if f.get("name")), key=lambda x: x["name"].lower()))
+    search_n = sum(1 for f in foods if f.get("visibility") == "search")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": 2,
+        "sources": [
+            "USDA FNDDS 2021-2023",
+            "USDA Foundation Foods 2025-12",
+            "USDA SR Legacy 2018",
+            "USDA Branded Foods",
+            "compiled extras",
+        ],
+        "count": len(foods),
+        "searchCount": search_n,
+        "foods": foods,
+    }
+    OUT.write_text(json.dumps(payload, separators=(",", ":")))
+    size_mb = OUT.stat().st_size / 1_000_000
+    print(f"wrote {OUT} ({len(foods)} foods, {search_n} search catalog, {size_mb:.1f} MB)")
+
+
 def load_json(path: Path) -> dict:
     print(f"loading {path} ...", flush=True)
     with path.open() as f:
         return json.load(f)
 
 
+def label_only() -> None:
+    payload = json.loads(OUT.read_text())
+    foods = list(payload.get("foods") or [])
+    ids = {f.get("id") for f in foods}
+    names = {norm(f.get("name") or "") for f in foods}
+    added = 0
+    if EXTRAS_FILE.exists():
+        for rec in json.loads(EXTRAS_FILE.read_text()).get("foods") or []:
+            key = norm(rec.get("name") or "")
+            if rec.get("id") in ids or key in names:
+                continue
+            store: dict[str, dict] = {}
+            add_extra_record(store, rec)
+            for food in store.values():
+                foods.append(food)
+                ids.add(food["id"])
+                names.add(norm(food["name"]))
+                added += 1
+    print(f" merged {added} extras from {EXTRAS_FILE.name}")
+    write_foods(foods)
+
+
 def main() -> None:
+    if "--label-only" in sys.argv:
+        label_only()
+        return
+
     store: dict[str, dict] = {}
 
     fndds = load_json(SRC / "surveyDownload.json")
@@ -333,24 +650,14 @@ def main() -> None:
             add_food(store, item, "sr")
         print(f" after SR Legacy: {len(store)}")
 
+    ingest_branded(store)
+
     for row in EXTRAS:
         add_extra(store, row)
-    print(f" after extras: {len(store)}")
+    added = merge_json_extras(store)
+    print(f" after extras: {len(store)} (json +{added})")
 
-    foods = sorted(store.values(), key=lambda x: x["name"].lower())
-    # drop empty names
-    foods = [f for f in foods if f["name"]]
-
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "version": 1,
-        "sources": ["USDA FNDDS 2021-2023", "USDA Foundation Foods 2025-12", "USDA SR Legacy 2018", "compiled extras"],
-        "count": len(foods),
-        "foods": foods,
-    }
-    OUT.write_text(json.dumps(payload, separators=(",", ":")))
-    size_mb = OUT.stat().st_size / 1_000_000
-    print(f"wrote {OUT} ({len(foods)} foods, {size_mb:.1f} MB)")
+    write_foods(list(store.values()))
 
 
 if __name__ == "__main__":

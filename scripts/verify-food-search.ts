@@ -6,6 +6,7 @@ import {
   fdcIdFromFoodId,
   foodSourceLabel,
   foodSourceUrl,
+  getFood,
   loadFoods,
   searchForItem,
   searchFoods,
@@ -551,6 +552,54 @@ const cases: Case[] = [
           url.includes('food-search') &&
           decodeURIComponent(url).includes('Avocado Toast'),
         got: url,
+      }
+    },
+  },
+  {
+    name: 'Public search hides garnish slices and dehydrated chips',
+    run() {
+      const publicHits = searchFoods('carrot', 12, 'search')
+      const pub = publicHits[0]
+      const garnish = getFood('fndds-2709660')
+      const dehyd = getFood('sr-170500')
+      const leaked = publicHits.find((f) => /dehydrated/i.test(f.name) || (f.serveG ?? 0) < 20)
+      return {
+        pass: Boolean(
+          pub &&
+            pub.visibility === 'search' &&
+            pub.name === 'Carrot' &&
+            pub.serveG >= 40 &&
+            !leaked &&
+            garnish &&
+            garnish.visibility === 'ref' &&
+            garnish.serveG < 20 &&
+            dehyd &&
+            dehyd.visibility === 'ref' &&
+            /dehydrated/i.test(dehyd.name),
+        ),
+        got: `search ${pub?.name} ${pub?.serveG}g vis=${pub?.visibility} · garnish ${garnish?.serveG}g ${garnish?.visibility} · dehyd ${dehyd?.name} ${dehyd?.visibility}`,
+      }
+    },
+  },
+  {
+    name: 'Public banana search is a medium fruit, refs still include the 6 g slice',
+    run() {
+      const pub = searchFoods('banana', 6, 'search')[0]
+      const garnish = searchFoods('banana', 12, 'all').find((f) => /banana, raw/i.test(f.name) && f.serveG < 20)
+      const kcal = pub ? Math.round(pub.kcal * (pub.serveG / 100)) : 0
+      return {
+        pass: Boolean(pub && pub.visibility === 'search' && (pub.serveG ?? 0) >= 80 && kcal >= 70 && garnish && garnish.visibility === 'ref'),
+        got: `search ${pub?.name} ${pub?.serveG}g ${kcal}kcal vis=${pub?.visibility} · ref slice ${garnish?.serveG}g ${garnish?.visibility}`,
+      }
+    },
+  },
+  {
+    name: 'USDA branded foods keep their FDC IDs',
+    run() {
+      const url = foodSourceUrl('branded-534358', 'KIND bar')
+      return {
+        pass: foodSourceLabel('branded-534358') === 'USDA Branded' && url === 'https://fdc.nal.usda.gov/food-details/534358/nutrients',
+        got: `${foodSourceLabel('branded-534358')} · ${url}`,
       }
     },
   },

@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview --host",
     "db": "python3 scripts/build-food-db.py",
+    "db:label": "python3 scripts/build-food-db.py --label-only",
     "test:e2e": "node scripts/e2e.mjs",
     "test": "tsx scripts/verify-vlm-parse.ts && tsx scripts/verify-food-search.ts && tsx scripts/verify-dates.ts && tsx scripts/verify-plan.ts && tsx scripts/verify-eval-metrics.ts",
     "test:parse": "tsx scripts/verify-vlm-parse.ts",

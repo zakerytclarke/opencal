@@ -1,4 +1,4 @@
-import { USDA_DATASETS, USDA_DOCS, USDA_FDC, foodCount } from '../lib/foods'
+import { USDA_DATASETS, USDA_DOCS, USDA_FDC, catalogCount, foodCount } from '../lib/foods'
 import { kgToLb } from '../lib/plan'
 import type { Profile } from '../types'
 
@@ -108,6 +108,11 @@ export function SettingsSheet({ profile, onClose, onResetOnboarding, onDeleteLog
             </a>
           </li>
           <li>
+            <a href={`${USDA_FDC}food-search?type=Branded`} target="_blank" rel="noopener noreferrer">
+              Branded Foods
+            </a>
+          </li>
+          <li>
             <a href={USDA_DATASETS} target="_blank" rel="noopener noreferrer">
               Download the USDA datasets
             </a>
@@ -119,13 +124,14 @@ export function SettingsSheet({ profile, onClose, onResetOnboarding, onDeleteLog
           </li>
         </ul>
         <p className="settings-cite">
-          A few restaurant and packaged items use typical published values. Each logged food has an info link to its USDA
-          record when one exists.
+          Search shows everyday names and household servings. Voice and photo matching can also use the full USDA
+          reference set, including lab and garnish rows. A few restaurant items use typical published values. Each logged
+          food has an info link to its USDA record when one exists.
         </p>
       </section>
 
       <p className="db-note settings-note">
-        {foodCount().toLocaleString()} foods on this device
+        {catalogCount().toLocaleString()} search foods · {foodCount().toLocaleString()} on this device
       </p>
     </div>
   )

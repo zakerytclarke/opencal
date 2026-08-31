@@ -93,7 +93,7 @@ export function LogOverlay({ kind, date, diary, onClose, onQueue, onQuick, onIns
     const q = query.trim()
     if (q.length < 2 || looksLikeSentence(q) || isQuickCalorie(q) != null) return []
     const recentIds = new Set(recentHits.map((e) => e.foodId))
-    return searchFoods(q, 8).filter((food) => !recentIds.has(food.id))
+    return searchFoods(q, 8, 'search').filter((food) => !recentIds.has(food.id))
   }, [query, recentHits])
   const quickCal = isQuickCalorie(query)
 

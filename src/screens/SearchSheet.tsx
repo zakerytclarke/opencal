@@ -16,7 +16,7 @@ export function SearchSheet({ date, initialQuery = '', listening = false, onClos
   const [quick, setQuick] = useState('')
   const [preview, setPreview] = useState<LogEntry[] | null>(null)
 
-  const results = useMemo(() => (q.trim().length < 2 || looksLikeSentence(q) ? [] : searchFoods(q, 24)), [q])
+  const results = useMemo(() => (q.trim().length < 2 || looksLikeSentence(q) ? [] : searchFoods(q, 24, 'search')), [q])
   const sentence = looksLikeSentence(q) || extractFoods(q).length > 1
   const quickCal = isQuickCalorie(q)
 

@@ -23,6 +23,8 @@ export type Profile = {
   createdAt: string
 }
 
+export type FoodVisibility = 'search' | 'ref'
+
 export type Food = {
   id: string
   name: string
@@ -38,12 +40,15 @@ export type Food = {
   serveLabel: string
   source: string
   aliases: string[]
+  /** search = catalog UI. ref = matcher / VLM only. */
+  visibility: FoodVisibility
 }
 
 export type FoodFile = {
   version: number
   sources: string[]
   count: number
+  searchCount?: number
   foods: Food[]
 }
 
