@@ -90,6 +90,21 @@ the model emits JSON for egg plus sides, which inflates image MAE vs that eggs-o
 Image identification (name accuracy) is the vision metric; banana count is the clean fixture calorie check.
 If MiniSearch cannot map the extracted name, the host leaves the diary unmatched (0 kcal).
 
+## Nutrition5k 20% image test (n=409)
+
+Usable pool is 2,041 plates with an image and a visible ingredient. Test is **409 (20.0%)**, all unused by prior train thumbs (0 leak). Frozen banana/eggs fixtures are extra (n=2), not part of that 20%.
+
+| Slice | n | Name acc | kcal MAE |
+|---|---:|---:|---:|
+| Text (unchanged) | 16 | 100% | 1.4 |
+| Fixtures | 2 | 100% | 399 |
+| N5k singles (1 visible food) | 305 | 70.2% | 79.5 |
+| N5k mixed (loose) | 104 | 84.6% | 221.6 |
+| N5k test (20%) | 409 | 73.8% | 115.6 |
+| All images | 411 | 74.0% | 117.0 |
+
+The old n=34 number was a capped FooDD-class sample, not 20% of the photo pool. Identification on the real 20% is ~74%; calorie error is still mostly portion unit (oz/g vs medium) and mixed plates.
+
 ## Citation / refuse (coach)
 
 Held-out `evals/splits/cite.json`: 3/3 cite USDA/convert_portion or refuse without a row.
