@@ -79,11 +79,18 @@ def _stems(s: str) -> list[str]:
     return [_stem(t) for t in tokens(s)]
 
 
+_SEARCH_CACHE: dict[tuple[int, str, int], list[dict[str, Any]]] = {}
+
+
 def search_foods(foods: list[dict[str, Any]], query: str, k: int = 3) -> list[dict[str, Any]]:
     q = (query or "").strip().lower()
     qtoks = _stems(q)
     if not qtoks:
         return []
+    cache_key = (id(foods), q, k)
+    hit_cached = _SEARCH_CACHE.get(cache_key)
+    if hit_cached is not None:
+        return hit_cached
     oil = "oil" in qtoks
     egg = qtoks == ["egg"] or qtoks == ["eggs"]
     scored: list[tuple[float, dict[str, Any]]] = []
@@ -155,6 +162,7 @@ def search_foods(foods: list[dict[str, Any]], query: str, k: int = 3) -> list[di
         out.append(food)
         if len(out) >= k:
             break
+    _SEARCH_CACHE[cache_key] = out
     return out
 
 

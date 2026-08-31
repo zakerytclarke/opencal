@@ -63,10 +63,11 @@ for (const row of extracts) {
     const gold = textById.get(row.id)
     if (!gold) continue
     const items = refineExtracted(toItems(row), gold.text)
+    const catalog = photoCatalog(items)
     const entries = items
       .filter((i) => i.query)
       .map((item) => {
-        const mapped = mapToBaseFood(item, gold.text)
+        const mapped = mapToBaseFood(item, gold.text, catalogHitsFor(item, catalog))
         return mapped ? entryFromFood(mapped.food, item, 'search', '1970-01-01') : null
       })
     const named = entries.map((e) => (e ? `${e.brand ?? ''} ${e.name}`.trim() : ''))
