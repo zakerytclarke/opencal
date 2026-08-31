@@ -13,6 +13,7 @@
     "test": "tsx scripts/verify-vlm-parse.ts && tsx scripts/verify-food-search.ts && tsx scripts/verify-dates.ts",
     "test:parse": "tsx scripts/verify-vlm-parse.ts",
     "test:search": "tsx scripts/verify-food-search.ts",
+    "ci": "npm test && tsc -b --pretty false && vite build",
     "test:vlm": "tsx scripts/vlm-smoke.ts"
   },
   "dependencies": {
