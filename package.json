@@ -10,11 +10,16 @@
     "preview": "vite preview --host",
     "db": "python3 scripts/build-food-db.py",
     "test:e2e": "node scripts/e2e.mjs",
-    "test": "tsx scripts/verify-vlm-parse.ts && tsx scripts/verify-food-search.ts && tsx scripts/verify-dates.ts && tsx scripts/verify-plan.ts",
+    "test": "tsx scripts/verify-vlm-parse.ts && tsx scripts/verify-food-search.ts && tsx scripts/verify-dates.ts && tsx scripts/verify-plan.ts && tsx scripts/verify-eval-metrics.ts",
     "test:parse": "tsx scripts/verify-vlm-parse.ts",
     "test:search": "tsx scripts/verify-food-search.ts",
     "ci": "npm test && tsc -b --pretty false && vite build",
-    "test:vlm": "tsx scripts/vlm-smoke.ts"
+    "test:vlm": "tsx scripts/vlm-smoke.ts",
+    "eval": "tsx scripts/eval/run.ts --split test --modality both",
+    "eval:text": "tsx scripts/eval/run.ts --split test --modality text",
+    "eval:images": "tsx scripts/eval/run.ts --split test --modality images",
+    "eval:train": "tsx scripts/eval/run.ts --split train --modality both",
+    "eval:prepare": "tsx scripts/eval/prepare-foodd.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

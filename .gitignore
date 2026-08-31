@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 screenshots/
+evals/data/
+evals/results/*
+!evals/results/.gitkeep
+evals/splits/images.foodd.json

@@ -1,0 +1,183 @@
+{
+  "seed": "opencal-eval-text-v1",
+  "note": "Train is for prompt/few-shot tuning. Test is held out. Gold kcal is resolved at runtime from USDA via the same entryFromFood path production uses.",
+  "train": [
+    {
+      "id": "train-pizza-coke",
+      "text": "I ate a slice of pepperoni pizza and a coke",
+      "expect": [
+        { "aliases": ["pizza", "pepperoni"], "query": "pepperoni pizza", "quantity": 1, "unit": "slice" },
+        { "aliases": ["coke", "cola", "soda"], "query": "coke", "quantity": 1, "unit": "can" }
+      ]
+    },
+    {
+      "id": "train-oatmeal-pb",
+      "text": "half a cup of oatmeal with a tablespoon of peanut butter",
+      "expect": [
+        { "aliases": ["oatmeal", "oat"], "query": "oatmeal", "quantity": 0.5, "unit": "cup" },
+        { "aliases": ["peanut butter"], "query": "peanut butter", "quantity": 1, "unit": "tbsp" }
+      ]
+    },
+    {
+      "id": "train-chicken-breast",
+      "text": "a grilled chicken breast",
+      "expect": [{ "aliases": ["chicken"], "query": "chicken breast", "quantity": 1, "unit": null }]
+    },
+    {
+      "id": "train-coffee-milk",
+      "text": "coffee with milk",
+      "expect": [
+        { "aliases": ["coffee"], "query": "coffee", "quantity": 1, "unit": "cup" },
+        { "aliases": ["milk"], "query": "milk", "quantity": 1, "unit": null }
+      ]
+    },
+    {
+      "id": "train-strawberries",
+      "text": "1 cup of strawberries",
+      "expect": [{ "aliases": ["strawberry", "strawberries"], "query": "strawberries", "quantity": 1, "unit": "cup" }]
+    },
+    {
+      "id": "train-scrambled-eggs",
+      "text": "scrambled eggs",
+      "expect": [{ "aliases": ["egg"], "query": "scrambled eggs", "quantity": 2, "unit": "large" }]
+    },
+    {
+      "id": "train-bagel-cream-cheese",
+      "text": "a bagel with cream cheese",
+      "expect": [
+        { "aliases": ["bagel"], "query": "bagel", "quantity": 1, "unit": null },
+        { "aliases": ["cream cheese"], "query": "cream cheese", "quantity": 1, "unit": "tbsp" }
+      ]
+    },
+    {
+      "id": "train-orange-juice",
+      "text": "a glass of orange juice",
+      "expect": [{ "aliases": ["orange juice"], "query": "orange juice", "quantity": 1, "unit": "glass" }]
+    },
+    {
+      "id": "train-mac-cheese",
+      "text": "a cup of mac and cheese",
+      "expect": [{ "aliases": ["mac", "macaroni"], "query": "mac and cheese", "quantity": 1, "unit": "cup" }]
+    },
+    {
+      "id": "train-pb-sandwich",
+      "text": "peanut butter sandwich",
+      "expect": [{ "aliases": ["peanut butter", "sandwich"], "query": "peanut butter sandwich", "quantity": 1, "unit": null }]
+    },
+    {
+      "id": "train-blueberries",
+      "text": "oatmeal with blueberries",
+      "expect": [
+        { "aliases": ["oatmeal", "oat"], "query": "oatmeal", "quantity": 1, "unit": "cup" },
+        { "aliases": ["blueberry", "blueberries"], "query": "blueberries", "quantity": 1, "unit": "handful" }
+      ]
+    },
+    {
+      "id": "train-pancakes",
+      "text": "2 pancakes",
+      "expect": [{ "aliases": ["pancake"], "query": "pancakes", "quantity": 2, "unit": null }]
+    },
+    {
+      "id": "train-caesar",
+      "text": "a caesar salad",
+      "expect": [{ "aliases": ["caesar", "salad"], "query": "caesar salad", "quantity": 1, "unit": "bowl" }]
+    },
+    {
+      "id": "train-cookie",
+      "text": "a chocolate chip cookie",
+      "expect": [{ "aliases": ["cookie"], "query": "chocolate chip cookie", "quantity": 1, "unit": null }]
+    }
+  ],
+  "test": [
+    {
+      "id": "test-eggs-banana",
+      "text": "2 eggs and a banana",
+      "expect": [
+        { "aliases": ["egg"], "query": "eggs", "quantity": 2, "unit": "large", "foodId": "foundation-748967" },
+        { "aliases": ["banana"], "query": "banana", "quantity": 1, "unit": "medium", "foodId": "extra-3888682" }
+      ]
+    },
+    {
+      "id": "test-turkey-bacon-eggs",
+      "text": "2 slices turkey bacon and 2 eggs",
+      "expect": [
+        { "aliases": ["turkey bacon"], "query": "turkey bacon", "quantity": 2, "unit": "slice", "foodId": "fndds-2706135" },
+        { "aliases": ["egg"], "query": "eggs", "quantity": 2, "unit": "large", "foodId": "foundation-748967" }
+      ]
+    },
+    {
+      "id": "test-almond-milk",
+      "text": "a cup of almond milk",
+      "expect": [{ "aliases": ["almond milk"], "query": "almond milk", "quantity": 1, "unit": "cup" }]
+    },
+    {
+      "id": "test-big-mac",
+      "text": "a McDonald's Big Mac",
+      "expect": [{ "aliases": ["big mac"], "query": "big mac", "quantity": 1, "unit": null }]
+    },
+    {
+      "id": "test-starbucks-latte",
+      "text": "Starbucks grande latte",
+      "expect": [{ "aliases": ["latte"], "query": "starbucks latte", "quantity": 1, "unit": "grande" }]
+    },
+    {
+      "id": "test-kind-bar",
+      "text": "a KIND protein bar",
+      "expect": [{ "aliases": ["kind"], "query": "kind bar", "quantity": 1, "unit": "bar" }]
+    },
+    {
+      "id": "test-chipotle-bowl",
+      "text": "Chipotle chicken bowl",
+      "expect": [{ "aliases": ["chipotle", "chicken"], "query": "chipotle chicken bowl", "quantity": 1, "unit": "bowl" }]
+    },
+    {
+      "id": "test-greek-yogurt",
+      "text": "a cup of greek yogurt",
+      "expect": [{ "aliases": ["yogurt", "greek"], "query": "greek yogurt", "quantity": 1, "unit": "cup" }]
+    },
+    {
+      "id": "test-banana",
+      "text": "a banana",
+      "expect": [{ "aliases": ["banana"], "query": "banana", "quantity": 1, "unit": "medium", "foodId": "extra-3888682" }]
+    },
+    {
+      "id": "test-egg-whites",
+      "text": "2 egg whites",
+      "expect": [{ "aliases": ["egg white", "white"], "query": "egg whites", "quantity": 2, "unit": null }]
+    },
+    {
+      "id": "test-pizza-slices",
+      "text": "2 slices of cheese pizza",
+      "expect": [{ "aliases": ["pizza"], "query": "cheese pizza", "quantity": 2, "unit": "slice" }]
+    },
+    {
+      "id": "test-chipotle-bowl-sides",
+      "text": "Chipotle chicken bowl with guacamole and black beans",
+      "expect": [
+        { "aliases": ["chipotle", "chicken", "bowl"], "query": "chipotle chicken bowl", "quantity": 1, "unit": "bowl" },
+        { "aliases": ["guacamole", "guac", "avocado"], "query": "guacamole", "quantity": 1, "unit": "serving" },
+        { "aliases": ["black bean", "beans"], "query": "black beans", "quantity": 1, "unit": "cup" }
+      ]
+    },
+    {
+      "id": "test-blueberry-muffin",
+      "text": "a blueberry muffin",
+      "expect": [{ "aliases": ["muffin"], "query": "blueberry muffin", "quantity": 1, "unit": null }]
+    },
+    {
+      "id": "test-turkey-bacon",
+      "text": "3 slices of turkey bacon",
+      "expect": [{ "aliases": ["turkey bacon"], "query": "turkey bacon", "quantity": 3, "unit": "slice" }]
+    },
+    {
+      "id": "test-milk-not-almond",
+      "text": "a glass of milk",
+      "expect": [{ "aliases": ["milk"], "query": "milk", "quantity": 1, "unit": "glass" }]
+    },
+    {
+      "id": "test-banana-pepper",
+      "text": "a banana pepper",
+      "expect": [{ "aliases": ["pepper"], "query": "banana pepper", "quantity": 1, "unit": null }]
+    }
+  ]
+}

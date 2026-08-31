@@ -1,0 +1,210 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { extname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { logFromPhoto, logFromText } from '../../src/lib/pipeline.ts'
+import { goldMealKcal } from './gold.ts'
+import { formatSummary, scoreCase, summarize } from './metrics.ts'
+import { setupLocalFoods } from './setup.ts'
+import type { CaseScore, EvalSplit, ImageCase, ImageSplitFile, TextCase, TextSplitFile } from './types.ts'
+
+const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
+
+function arg(name: string, fallback = ''): string {
+  const i = process.argv.indexOf(`--${name}`)
+  return i >= 0 ? process.argv[i + 1] ?? fallback : fallback
+}
+
+function loadJson<T>(path: string): T {
+  return JSON.parse(readFileSync(path, 'utf8')) as T
+}
+
+function mimeFor(path: string): string {
+  const ext = extname(path).toLowerCase()
+  if (ext === '.png') return 'image/png'
+  if (ext === '.webp') return 'image/webp'
+  return 'image/jpeg'
+}
+
+function take<T>(rows: T[], limit: number): T[] {
+  return limit > 0 ? rows.slice(0, limit) : rows
+}
+
+const split = (arg('split', 'test') as EvalSplit) || 'test'
+const modality = arg('modality', 'both')
+const limit = Number(arg('limit', '0')) || 0
+
+await setupLocalFoods()
+
+const textFile = loadJson<TextSplitFile>(join(root, 'evals/splits/text.json'))
+const imageFile = loadJson<ImageSplitFile>(join(root, 'evals/splits/images.json'))
+const fooddPath = join(root, 'evals/splits/images.foodd.json')
+const fooddFile = existsSync(fooddPath) ? loadJson<ImageSplitFile>(fooddPath) : null
+
+const textCases: TextCase[] =
+  split === 'train' ? textFile.train : split === 'test' ? textFile.test : [...textFile.train, ...textFile.test]
+const imageCases: ImageCase[] = [
+  ...(split === 'train' ? imageFile.train : split === 'test' ? imageFile.test : [...imageFile.train, ...imageFile.test]),
+  ...(fooddFile
+    ? split === 'train'
+      ? fooddFile.train
+      : split === 'test'
+        ? fooddFile.test
+        : [...fooddFile.train, ...fooddFile.test]
+    : []),
+]
+
+const scores: CaseScore[] = []
+const runText = modality === 'text' || modality === 'both'
+const runImages = modality === 'images' || modality === 'both'
+
+if (runText) {
+  for (const row of take(textCases, limit)) {
+    const gold = goldMealKcal(row.expect)
+    const started = Date.now()
+    try {
+      const entries = await logFromText(row.text, '1970-01-01', 'search')
+      const kcalPred = entries.reduce((s, e) => s + e.kcal, 0)
+      const names = entries.map((e) => `${e.brand ?? ''} ${e.name}`.trim())
+      const score = scoreCase({
+        id: row.id,
+        split,
+        modality: 'text',
+        predictedNames: names,
+        goldAliases: row.expect.map((e) => e.aliases),
+        kcalPred,
+        kcalGold: gold,
+        unmatched: entries.filter((e) => e.foodId === 'unmatched' || e.foodId === 'quick').length,
+        ms: Date.now() - started,
+      })
+      scores.push(score)
+      console.log(
+        `${score.named ? 'HIT' : 'MISS'} ${row.id}  pred ${Math.round(kcalPred)} vs gold ${Math.round(gold)}  ${names.join(' · ') || '(none)'}`,
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      scores.push(
+        scoreCase({
+          id: row.id,
+          split,
+          modality: 'text',
+          predictedNames: [],
+          goldAliases: row.expect.map((e) => e.aliases),
+          kcalPred: 0,
+          kcalGold: gold,
+          unmatched: 1,
+          ms: Date.now() - started,
+          error: message,
+        }),
+      )
+      console.error('ERR', row.id, message)
+    }
+  }
+}
+
+if (runImages) {
+  for (const row of take(imageCases, limit)) {
+    const gold = goldMealKcal([
+      { aliases: row.aliases, query: row.query, quantity: row.quantity, unit: row.unit, foodId: row.foodId },
+    ])
+    const abs = resolve(root, row.path)
+    const started = Date.now()
+    if (!existsSync(abs)) {
+      console.error('MISSING', row.id, abs)
+      scores.push(
+        scoreCase({
+          id: row.id,
+          split,
+          modality: 'image',
+          source: row.source,
+          predictedNames: [],
+          goldAliases: [row.aliases],
+          loose: row.loose,
+          kcalPred: 0,
+          kcalGold: gold,
+          unmatched: 1,
+          ms: 0,
+          error: `missing file ${row.path}`,
+        }),
+      )
+      continue
+    }
+    try {
+      const blob = new Blob([readFileSync(abs)], { type: mimeFor(abs) })
+      const entries = await logFromPhoto(blob, '1970-01-01')
+      const kcalPred = entries.reduce((s, e) => s + e.kcal, 0)
+      const names = entries.map((e) => `${e.brand ?? ''} ${e.name}`.trim())
+      const score = scoreCase({
+        id: row.id,
+        split,
+        modality: 'image',
+        source: row.source,
+        predictedNames: names,
+        goldAliases: [row.aliases],
+        loose: row.loose,
+        kcalPred,
+        kcalGold: gold,
+        unmatched: entries.filter((e) => e.foodId === 'unmatched' || e.foodId === 'quick').length,
+        ms: Date.now() - started,
+      })
+      scores.push(score)
+      console.log(
+        `${score.named ? 'HIT' : 'MISS'} ${row.id}  pred ${Math.round(kcalPred)} vs gold ${Math.round(gold)}  ${names.join(' · ') || '(none)'}`,
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      scores.push(
+        scoreCase({
+          id: row.id,
+          split,
+          modality: 'image',
+          source: row.source,
+          predictedNames: [],
+          goldAliases: [row.aliases],
+          loose: row.loose,
+          kcalPred: 0,
+          kcalGold: gold,
+          unmatched: 1,
+          ms: Date.now() - started,
+          error: message,
+        }),
+      )
+      console.error('ERR', row.id, message)
+    }
+  }
+}
+
+const byModality = {
+  text: scores.filter((s) => s.modality === 'text'),
+  image: scores.filter((s) => s.modality === 'image'),
+  all: scores,
+}
+
+const report = [
+  `# OpenCal pipeline eval · ${split} · ${new Date().toISOString()}`,
+  '',
+  'Calories are production pipeline output vs USDA gold for the labeled food and serving. FooDD class folders supply image labels; per-100g table values are in evals/taxonomy/foodd.json.',
+  '',
+  runText ? formatSummary('Text', summarize(byModality.text)) : '',
+  runImages ? formatSummary('Images', summarize(byModality.image)) : '',
+  formatSummary('All', summarize(byModality.all)),
+  '',
+  '| id | hit | pred kcal | gold kcal | abs err | ape | items |',
+  '|---|---|---:|---:|---:|---:|---|',
+  ...scores.map(
+    (s) =>
+      `| ${s.id} | ${s.named ? 'yes' : 'no'} | ${Math.round(s.kcalPred)} | ${Math.round(s.kcalGold)} | ${s.kcalAbsErr.toFixed(0)} | ${(s.kcalApe * 100).toFixed(0)}% | ${s.itemsPred.join(', ') || '—'} |`,
+  ),
+]
+  .filter((line) => line !== '')
+  .join('\n')
+
+const outDir = join(root, 'evals/results')
+mkdirSync(outDir, { recursive: true })
+const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+writeFileSync(join(outDir, `${stamp}.json`), `${JSON.stringify({ split, modality, scores, summary: { text: summarize(byModality.text), image: summarize(byModality.image), all: summarize(byModality.all) } }, null, 2)}\n`)
+writeFileSync(join(outDir, `${stamp}.md`), `${report}\n`)
+writeFileSync(join(outDir, 'latest.json'), `${JSON.stringify({ split, modality, scores, summary: { text: summarize(byModality.text), image: summarize(byModality.image), all: summarize(byModality.all) } }, null, 2)}\n`)
+writeFileSync(join(outDir, 'latest.md'), `${report}\n`)
+console.log('')
+console.log(report)
+console.log(`\nWrote evals/results/latest.md`)
