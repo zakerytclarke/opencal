@@ -42,13 +42,14 @@ Skip plates, utensils, and backgrounds.`
 
 export const PHOTO_EXTRACT_USER = 'What foods are in this photo? Estimate portions.'
 
-export const PICK_SYSTEM = `You pick the best local-database row for one logged food.
+export const PICK_SYSTEM = `You pick a local-database reference row for nutrition only.
+The diary will keep the user's own name and brand. Do not rename the food.
 You are given the user's meal, this item, and lettered hits with their serving size.
 Reply with JSON only:
 {"pick":"A","name":"Egg, whole, cooked, scrambled","brand":null,"unit":"large","quantity":2}
 Rules:
-- pick is the letter of the closest food, or null if none match.
-- name and brand must come from the chosen row (or the user's item if pick is null).
+- pick is the letter of the closest nutrition reference, or null if none match.
+- name in the JSON is the chosen row's name (for the link), not a replacement label.
 - unit is the serving unit from that row that best matches what the user ate (large, cup, slice, g, …).
 - quantity is how many of THAT serving the user ate, not grams.
   Example: user ate 2 large eggs, row serving is 1 large → quantity 2.
@@ -74,7 +75,7 @@ export function pickUserPrompt(opts: {
     'Database hits:',
     ...opts.lines,
     'None. no match',
-    'Pick the closest row and how many of its servings were eaten.',
+    'Pick the closest nutrition reference and how many of its servings were eaten. Keep the user name/brand.',
   ].join('\n')
 }
 

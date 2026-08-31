@@ -202,6 +202,15 @@ export function scaleFood(food: Food, grams: number): Pick<LogEntry, 'kcal' | 'p
   }
 }
 
+/** Diary label from what the user typed, spoke, or the photo named. */
+export function prettyFoodName(name: string): string {
+  const t = name.replace(/\s+/g, ' ').trim()
+  if (!t) return 'Food'
+  if (/[A-Z]/.test(t) && t !== t.toUpperCase()) return t
+  if (t === t.toUpperCase() && t.length <= 8) return t
+  return t.toLowerCase().replace(/(^|[\s/-])([a-z])/g, (_, p, c) => `${p}${c.toUpperCase()}`)
+}
+
 export function foodBrand(name: string): string | null {
   const lead = name.match(/^([A-Z][A-Z0-9'&. ]{1,40}?)(?:'S|'s)?, /)
   if (lead) return lead[1].replace(/'S$/, "'s").trim()
@@ -239,8 +248,8 @@ export function entryFromFood(
     id: uid(),
     date,
     foodId: food.id,
-    name: food.name,
-    brand: item.brand ?? foodBrand(food.name),
+    name: prettyFoodName(item.query || item.raw || food.name),
+    brand: item.brand?.trim() || null,
     emoji: food.emoji,
     grams,
     servings,
@@ -259,7 +268,7 @@ export function unmatchedEntry(item: ExtractedItem, source: LogEntry['source'], 
     id: uid(),
     date,
     foodId: 'unmatched',
-    name: item.query || item.raw,
+    name: prettyFoodName(item.query || item.raw),
     brand: item.brand ?? null,
     emoji: '🍽️',
     grams: 0,

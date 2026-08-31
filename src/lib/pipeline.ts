@@ -74,15 +74,20 @@ async function matchOne(
     picked.decision.index != null ? rows[picked.decision.index]?.food ?? null : null
   const quantity = picked.decision.quantity || item.quantity
   const unit = picked.decision.unit ?? item.unit
-  const brand = picked.decision.brand ?? item.brand ?? null
-  const resolved: ExtractedItem = { ...item, quantity, unit, brand }
+  const resolved: ExtractedItem = {
+    ...item,
+    quantity,
+    unit,
+    brand: item.brand ?? null,
+    query: item.query,
+  }
 
   if (!food) {
     const fallback = bestMatch(item.query)
     return {
       entry: fallback
         ? entryFromFood(fallback, resolved, source, date)
-        : unmatchedEntry({ ...resolved, query: picked.decision.name || item.query }, source, date),
+        : unmatchedEntry(resolved, source, date),
       raw: picked.raw,
       path: picked.error ? 'error-fallback' : 'vlm',
       error: picked.error,

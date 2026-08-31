@@ -355,8 +355,86 @@ const cases: Case[] = [
       if (!food) return { pass: false, got: 'no kind bar' }
       const entry = entryFromFood(food, item('kind bar', { brand: 'KIND', quantity: 1, unit: 'bar' }), 'search', '2026-08-30')
       return {
-        pass: /kind/i.test(food.name) && entry.kcal >= 150 && entry.grams >= 30,
-        got: `${food.name} · ${entry.serveLabel} · ${entry.grams}g · ${entry.kcal} kcal`,
+        pass:
+          /kind/i.test(food.name) &&
+          entry.name === 'Kind Bar' &&
+          entry.brand === 'KIND' &&
+          entry.foodId === food.id &&
+          entry.kcal >= 150 &&
+          entry.grams >= 30,
+        got: `${entry.name} (${entry.brand}) → ${food.name} · ${entry.serveLabel} · ${entry.grams}g · ${entry.kcal} kcal`,
+      }
+    },
+  },
+  {
+    name: 'Diary keeps spoken name, links USDA turkey bacon',
+    run() {
+      const items = parseExtractedFoods(
+        '{"foods":[{"name":"turkey bacon","quantity":2,"unit":"slice"}]}',
+      )
+      const food = searchForItem(items[0], 6)[0]
+      if (!food) return { pass: false, got: 'no reference' }
+      const entry = entryFromFood(food, items[0], 'voice', '2026-08-30')
+      return {
+        pass:
+          entry.name === 'Turkey Bacon' &&
+          entry.brand == null &&
+          entry.foodId === food.id &&
+          /turkey bacon/i.test(food.name) &&
+          food.name !== entry.name,
+        got: `${entry.name} brand=${entry.brand ?? 'none'} → ${food.id} ${food.name}`,
+      }
+    },
+  },
+  {
+    name: 'Diary keeps Starbucks + latte, not USDA row title',
+    run() {
+      const items = parseExtractedFoods(
+        '{"foods":[{"name":"grande latte","brand":"Starbucks","quantity":1,"unit":"grande"}]}',
+      )
+      const food = searchForItem(items[0], 6)[0]
+      if (!food) return { pass: false, got: 'no reference' }
+      const entry = entryFromFood(food, items[0], 'voice', '2026-08-30')
+      return {
+        pass:
+          entry.name === 'Grande Latte' &&
+          entry.brand === 'Starbucks' &&
+          entry.foodId === food.id &&
+          /starbucks/i.test(food.name) &&
+          food.name !== entry.name,
+        got: `${entry.brand} ${entry.name} → ${food.name}`,
+      }
+    },
+  },
+  {
+    name: 'Photo KIND protein bar keeps package name',
+    run() {
+      const items = parseExtractedFoods(
+        '{"foods":[{"name":"protein bar","brand":"KIND","quantity":1,"unit":"bar"}]}',
+      )
+      const food = searchForItem(items[0], 6)[0]
+      if (!food) return { pass: false, got: 'no reference' }
+      const entry = entryFromFood(food, items[0], 'photo', '2026-08-30')
+      return {
+        pass:
+          entry.name === 'Protein Bar' &&
+          entry.brand === 'KIND' &&
+          entry.foodId === food.id &&
+          /kind/i.test(food.name),
+        got: `${entry.brand} ${entry.name} → ${food.name}`,
+      }
+    },
+  },
+  {
+    name: 'USDA brand is not copied onto an unbranded spoken food',
+    run() {
+      const items = parseExtractedFoods('{"foods":[{"name":"greek yogurt","quantity":1,"unit":"cup"}]}')
+      const food = searchForItem(items[0], 6)[0]
+      if (!food) return { pass: false, got: 'no reference' }
+      const entry = entryFromFood(food, items[0], 'voice', '2026-08-30')
+      return {
+        pass: entry.name === 'Greek Yogurt' && entry.brand == null && entry.foodId === food.id,
+        got: `${entry.name} brand=${entry.brand ?? 'none'} · ref ${food.name}`,
       }
     },
   },

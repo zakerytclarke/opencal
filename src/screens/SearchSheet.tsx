@@ -21,7 +21,14 @@ export function SearchSheet({ date, initialQuery = '', listening = false, onClos
   const quickCal = isQuickCalorie(q)
 
   function logFood(food: Food) {
-    const item: ExtractedItem = { raw: q, query: food.name, quantity: 1, unit: null }
+    const parsed = extractFoods(q)[0]
+    const item: ExtractedItem = {
+      raw: q,
+      query: parsed?.query || q.trim() || food.name,
+      brand: parsed?.brand ?? null,
+      quantity: parsed?.quantity ?? 1,
+      unit: parsed?.unit ?? null,
+    }
     onLog([entryFromFood(food, item, 'search', date)])
     onClose()
   }
