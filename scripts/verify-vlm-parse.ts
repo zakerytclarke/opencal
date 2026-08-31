@@ -1,5 +1,5 @@
 import { extractFoods, isQuickCalorie, refineExtracted } from '../src/lib/extract.ts'
-import { EXTRACT_SYSTEM, PHOTO_EXTRACT_SYSTEM, PICK_SYSTEM, formatChatPrompt, parseExtractedFoods, parsePick, pickUserPrompt } from '../src/lib/vlmParse.ts'
+import { EXTRACT_SYSTEM, PHOTO_EXTRACT_SYSTEM, PHOTO_PORTION_SYSTEM, PICK_SYSTEM, formatChatPrompt, parseExtractedFoods, parsePick, pickUserPrompt } from '../src/lib/vlmParse.ts'
 
 type Row = {
   id: number
@@ -495,19 +495,35 @@ const rows: Row[] = [
   {
     id: 32,
     kind: 'text',
-    name: 'Photo extract names foods and leaves USDA mapping to the host',
+    name: 'Photo identify names foods only; host RAG estimates portions next',
     input: PHOTO_EXTRACT_SYSTEM,
-    expect: 'count + host map',
+    expect: 'names + brands, no quantity',
     run() {
       const s = PHOTO_EXTRACT_SYSTEM
       return {
         pass:
-          /count every distinct piece/i.test(s) &&
-          /host maps name and brand/i.test(s) &&
-          /convert_portion/.test(s) &&
-          /do not estimate grams or calories/i.test(s) &&
-          /catalog letter/i.test(s),
-        got: /host maps/i.test(s) ? 'host maps' : 'missing host map',
+          /name every edible item/i.test(s) &&
+          /do not output quantity, unit, grams, or calories/i.test(s) &&
+          /second step estimates portions/i.test(s),
+        got: /do not output quantity/i.test(s) ? 'identify only' : 'still asks for quantity',
+      }
+    },
+  },
+  {
+    id: 33,
+    kind: 'text',
+    name: 'Photo portion uses USDA serving grams as a visual ruler',
+    input: PHOTO_PORTION_SYSTEM,
+    expect: 'quantity + unit, no invented calories',
+    run() {
+      const s = PHOTO_PORTION_SYSTEM
+      return {
+        pass:
+          /visual ruler/i.test(s) &&
+          /prefer grams/i.test(s) &&
+          /do not invent calories/i.test(s) &&
+          /convert_portion/.test(s),
+        got: /visual ruler/i.test(s) ? 'portion + USDA ruler' : 'missing ruler',
       }
     },
   },

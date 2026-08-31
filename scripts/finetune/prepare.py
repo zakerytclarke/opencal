@@ -47,10 +47,13 @@ from prompts import (  # noqa: E402
     EXTRACT_USER,
     PHOTO_EXTRACT_SYSTEM,
     PHOTO_EXTRACT_USER,
+    PHOTO_PORTION_SYSTEM,
     PICK_NONE_LINE,
     PICK_SYSTEM,
     PICK_USER_TAIL,
+    photo_portion_user,
 )
+from rag import catalog_lines  # noqa: E402
 
 NICE_UNIT = re.compile(
     r"\b(medium|small|large|extra large|slice|sandwich|bar|can|bottle|bowl|"
@@ -110,11 +113,9 @@ FORCE_UNITS = [
 
 PHOTO_USER_PARAPHRASE = [
     PHOTO_EXTRACT_USER,
-    "List every food in the photo. Count pieces. JSON only.",
-    "Extract foods from this picture. Count items and use household units. No calories.",
-    "What is on this plate? Count each piece. Reply with extract JSON only.",
-    "Name brand, quantity, and unit for every food you can see. JSON only. No grams or calories.",
-    "Identify each food. Count how many. Household units only.",
+    "List every food in the photo. Names and brands only. JSON only.",
+    "What is on this plate? Name each food. No quantity or calories.",
+    "Identify each visible food and any package brand. Do not estimate portions.",
 ]
 
 
@@ -1005,6 +1006,13 @@ def build_coach(foods: list[dict], n: int, rng: random.Random, banned: set[str])
     return rows[:n]
 
 
+def identify_item(name: str, brand: str | None = None) -> dict:
+    return {
+        "name": name.lower() if name != name.upper() else name,
+        "brand": brand,
+    }
+
+
 def image_record(path: Path, foods: list[dict], source: str, ident: str, user: str | None = None) -> dict:
     if str(path) in BANNED_IMAGES:
         raise ValueError(f"refusing to train on held-out image {path}")
@@ -1020,14 +1028,35 @@ def image_record(path: Path, foods: list[dict], source: str, ident: str, user: s
     }
 
 
-def build_fixtures(upsample: int, rng: random.Random) -> list[dict]:
+def portion_record(
+    path: Path,
+    foods: list[dict],
+    catalog: list[str],
+    source: str,
+    ident: str,
+) -> dict:
+    if str(path) in BANNED_IMAGES:
+        raise ValueError(f"refusing to train on held-out image {path}")
+    names = [str(f.get("name") or "") for f in foods]
+    return {
+        "task": "portion_image",
+        "image": str(path),
+        "messages": [
+            {"role": "system", "content": PHOTO_PORTION_SYSTEM},
+            {"role": "user", "content": photo_portion_user(names, catalog)},
+            {"role": "assistant", "content": json_foods(foods)},
+        ],
+        "meta": {"id": ident, "source": source},
+    }
+
+
+def build_fixtures(upsample: int, rng: random.Random, catalog: list[dict]) -> list[dict]:
     """Accurate labels for train photos only. banana.jpg and eggs.jpg stay out."""
     pizza = ROOT / "scripts/fixtures/pizza.jpg"
     bowl = ROOT / "scripts/fixtures/bowl.jpg"
-    pizza_foods = [
-        item_from("bbq chicken pineapple pizza", 6, "slice"),
-    ]
-    bowl_foods = [
+    pizza_portion = [item_from("bbq chicken pineapple pizza", 6, "slice")]
+    pizza_simple = [item_from("pizza", 6, "slice")]
+    bowl_portion = [
         item_from("tofu", 7, "piece"),
         item_from("quail egg", 2, "piece"),
         item_from("cherry tomato", 4, "piece"),
@@ -1037,16 +1066,34 @@ def build_fixtures(upsample: int, rng: random.Random) -> list[dict]:
         item_from("edamame", 0.25, "cup"),
         item_from("lettuce", 1, "cup"),
     ]
-    # Also teach a coarser pizza label that MiniSearch can hit (cheese/chicken pizza).
-    pizza_simple = [item_from("pizza", 6, "slice")]
+    pizza_id = [identify_item("pizza")]
+    bowl_id = [identify_item(x["name"]) for x in bowl_portion]
     rows: list[dict] = []
     if pizza.exists():
         for i in range(upsample):
-            foods = pizza_foods if i % 3 else pizza_simple
-            rows.append(image_record(pizza, foods, "fixture-pizza", f"fix-pizza-{i}", rng.choice(PHOTO_USER_PARAPHRASE)))
+            foods = pizza_simple if i % 2 else pizza_portion
+            rows.append(image_record(pizza, pizza_id, "fixture-pizza", f"fix-pizza-{i}", rng.choice(PHOTO_USER_PARAPHRASE)))
+            rows.append(
+                portion_record(
+                    pizza,
+                    foods,
+                    catalog_lines(catalog, [f["name"] for f in foods]),
+                    "fixture-pizza",
+                    f"fix-pizza-portion-{i}",
+                )
+            )
     if bowl.exists():
         for i in range(upsample):
-            rows.append(image_record(bowl, bowl_foods, "fixture-bowl", f"fix-bowl-{i}", rng.choice(PHOTO_USER_PARAPHRASE)))
+            rows.append(image_record(bowl, bowl_id, "fixture-bowl", f"fix-bowl-{i}", rng.choice(PHOTO_USER_PARAPHRASE)))
+            rows.append(
+                portion_record(
+                    bowl,
+                    bowl_portion,
+                    catalog_lines(catalog, [f["name"] for f in bowl_portion]),
+                    "fixture-bowl",
+                    f"fix-bowl-portion-{i}",
+                )
+            )
     return rows
 
 
@@ -1141,8 +1188,8 @@ def n5k_item(name: str, grams: float, rng: random.Random) -> dict:
     return grams_item(name, grams, rng)
 
 
-def build_nutrition5k(limit: int, rng: random.Random) -> list[dict]:
-    if limit <= 0:
+def build_nutrition5k(limit: int, rng: random.Random, catalog: list[dict]) -> list[dict]:
+    if limit < 0:
         return []
     try:
         from PIL import Image
@@ -1172,12 +1219,12 @@ def build_nutrition5k(limit: int, rng: random.Random) -> list[dict]:
     if skip:
         print(f" nutrition5k skipping {len(skip)} held-out eval dishes")
 
+    plates = 0
     for sample in samples:
-        if len(rows) >= limit:
+        if limit and plates >= limit:
             break
-        cals = sample.get("total_calories") or 0
         ingredients = sample.get("ingredients") or []
-        if cals < 80 or len(ingredients) < 1:
+        if not ingredients:
             continue
         sid = str(sample.get("id") or "")
         if sid in skip:
@@ -1188,14 +1235,16 @@ def build_nutrition5k(limit: int, rng: random.Random) -> list[dict]:
             src = snap / "test" / Path(rel).name
         if not src.exists():
             continue
-        foods = []
+        identified: list[dict] = []
+        portioned: list[dict] = []
         for ing in ingredients[:8]:
-            name = (ing.get("name") or "").strip()
-            grams = ing.get("grams") or 0
-            if not name or grams < 8:
+            name = re.sub(r"\(raw\)|\(cooked\)", "", (ing.get("name") or "").lower()).strip()
+            grams = float(ing.get("grams") or 0)
+            if not name or grams < 5:
                 continue
-            foods.append(n5k_item(name, grams, rng))
-        if not foods:
+            identified.append(identify_item(name))
+            portioned.append(item_from(name, max(1, int(round(grams))), "g"))
+        if not portioned:
             continue
         if not sid:
             sid = src.stem
@@ -1207,8 +1256,19 @@ def build_nutrition5k(limit: int, rng: random.Random) -> list[dict]:
                 continue
             image.thumbnail((512, 512))
             image.save(out_path, quality=85)
-        rows.append(image_record(out_path, foods, "nutrition5k", sid, rng.choice(PHOTO_USER_PARAPHRASE)))
-    print(f" nutrition5k kept {len(rows)} plates from local cache")
+        names = [f["name"] for f in portioned]
+        rows.append(image_record(out_path, identified, "nutrition5k", sid, rng.choice(PHOTO_USER_PARAPHRASE)))
+        rows.append(
+            portion_record(
+                out_path,
+                portioned,
+                catalog_lines(catalog, names),
+                "nutrition5k",
+                f"{sid}-portion",
+            )
+        )
+        plates += 1
+    print(f" nutrition5k {plates} plates → {len(rows)} identify+portion rows")
     return rows
 
 
@@ -1225,7 +1285,7 @@ def main() -> None:
     p.add_argument("--combo", type=int, default=700)
     p.add_argument("--pick", type=int, default=0, help="Lettered USDA pick examples; 0 = off (host maps)")
     p.add_argument("--coach", type=int, default=2000)
-    p.add_argument("--n5k", type=int, default=1400)
+    p.add_argument("--n5k", type=int, default=0, help="Max Nutrition5k plates (0 = all train-eligible)")
     p.add_argument("--fixture-upsample", type=int, default=96)
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--skip-n5k", action="store_true")
@@ -1243,8 +1303,8 @@ def main() -> None:
         "combo": build_combos(foods, args.combo, rng, banned),
         "pick": build_pick(foods, args.pick, rng) if args.pick else [],
         "coach": build_coach(foods, args.coach, rng, banned),
-        "fixtures": build_fixtures(args.fixture_upsample, rng),
-        "nutrition5k": [] if args.skip_n5k else build_nutrition5k(args.n5k, rng),
+        "fixtures": build_fixtures(args.fixture_upsample, rng, foods),
+        "nutrition5k": [] if args.skip_n5k else build_nutrition5k(args.n5k, rng, foods),
     }
 
     train: list[dict] = []

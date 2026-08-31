@@ -394,6 +394,26 @@ export function searchForItem(item: ExtractedItem, limit = 8): Food[] {
   return searchForItem({ ...item, brand: null }, limit)
 }
 
+/** USDA household servings for the photo portion step (visual ruler, not convert_portion). */
+export function photoCatalogLines(items: ExtractedItem[], hitsPerFood = 3): { names: string[]; lines: string[] } {
+  const names = items.map((i) => i.query).filter(Boolean)
+  const lines: string[] = []
+  for (const item of items) {
+    if (!item.query) continue
+    const hits = searchForItem(item, hitsPerFood)
+    if (!hits.length) {
+      lines.push(`- ${item.query}: (no USDA row)`)
+      continue
+    }
+    const bits = hits.map((food, i) => {
+      const letter = String.fromCharCode(65 + i)
+      return `${letter}. ${food.name} · USDA ${food.serveLabel} (${Math.round(food.serveG)} g)`
+    })
+    lines.push(`- ${item.query}: ${bits.join(' | ')}`)
+  }
+  return { names, lines }
+}
+
 /** Brand / grande cues from the meal or extract, applied on MiniSearch hits. */
 export function preferReference(item: ExtractedItem, picked: Food | null, hits: Food[], meal: string): Food | null {
   const brand = item.brand?.trim().toLowerCase()

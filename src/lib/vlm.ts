@@ -7,12 +7,14 @@ import {
   EXTRACT_SYSTEM,
   PHOTO_EXTRACT_SYSTEM,
   PHOTO_EXTRACT_USER,
+  PHOTO_PORTION_SYSTEM,
   PICK_PREFIX,
   PICK_SYSTEM,
   extractUserPrompt,
   formatChatPrompt,
   parseExtractedFoods,
   parsePick,
+  photoPortionUser,
   pickUserPrompt,
   stripSpecialTokens,
   type PickDecision,
@@ -384,6 +386,71 @@ export async function extractMealPhoto(image: Blob, onProgress?: ProgressFn): Pr
   }
 }
 
+export async function estimatePhotoPortions(
+  image: Blob,
+  names: string[],
+  lines: string[],
+  onProgress?: ProgressFn,
+): Promise<AnalyzeResult> {
+  const started = performance.now()
+  const user = photoPortionUser(names, lines)
+  try {
+    if ((await detectBackend()) === 'http') {
+      onProgress?.('Estimating portions…', 40)
+      const body = new FormData()
+      body.append('image', image, 'plate.jpg')
+      body.append('catalog', user)
+      const r = await fetch('/vlm/portion-photo', { method: 'POST', body })
+      const data = (await r.json()) as { raw?: string }
+      const raw = data.raw ?? ''
+      const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
+      const items = parseExtractedFoods(labeled)
+      return {
+        raw: stripSpecialTokens(labeled) || labeled,
+        items,
+        path: items.length ? 'vlm' : 'vlm-empty',
+        ms: Math.round(performance.now() - started),
+      }
+    }
+    const sess = await loadSession(onProgress)
+    onProgress?.('Estimating portions…', 40)
+    const img = await sess.loadImage(image)
+    const prompt = formatChatPrompt(
+      [
+        { role: 'system', content: PHOTO_PORTION_SYSTEM },
+        {
+          role: 'user',
+          content: [
+            { type: 'image' },
+            { type: 'text', text: user },
+          ],
+        },
+      ],
+      true,
+      EXTRACT_PREFIX,
+    )
+    const inputs = await sess.runProcessor(img, prompt)
+    const raw = await decodeGeneration(sess, inputs, 280)
+    const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
+    const items = parseExtractedFoods(labeled)
+    return {
+      raw: stripSpecialTokens(labeled) || labeled,
+      items,
+      path: items.length ? 'vlm' : 'vlm-empty',
+      ms: Math.round(performance.now() - started),
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return {
+      raw: '',
+      items: [],
+      path: 'error-fallback',
+      error: message,
+      ms: Math.round(performance.now() - started),
+    }
+  }
+}
+
 export async function pickFoodMatch(
   meal: string,
   item: ExtractedItem,
@@ -454,6 +521,7 @@ if (typeof window !== 'undefined') {
       warmupVlm,
       extractMealText,
       extractMealPhoto,
+      estimatePhotoPortions,
       pickFoodMatch,
       convertPortion,
       analyzeMealText,

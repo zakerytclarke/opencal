@@ -38,18 +38,32 @@ export const EXTRACT_FEWSHOT: ChatMessage[] = [
   },
 ]
 
-export const PHOTO_EXTRACT_SYSTEM = `You extract every edible item clearly visible in the photo.
+export const PHOTO_EXTRACT_SYSTEM = `You name every edible item clearly visible in the photo.
 Reply with JSON only, never a caption:
-{"foods":[{"name":"apple","brand":null,"quantity":1,"unit":"medium"}]}
-Count every distinct piece. Three apples is quantity 3, not 1. Six pizza slices is quantity 6 unit slice. Two eggs is quantity 2 unit large. A bunch still attached is that many items, not one bunch.
-Split a mixed bowl into the foods you can see (tofu, eggs, corn, …), not one generic "bowl".
+{"foods":[{"name":"apple","brand":null},{"name":"KIND bar","brand":"KIND"}]}
 name is a short grocery name. brand is a readable package or logo, else null.
-quantity is how many pieces or servings you see. unit is the household word: medium, large, small, slice, cup, tbsp, oz, piece, bar.
-The host maps name and brand to a USDA row, then convert_portion converts quantity and unit. Do not estimate grams or calories or pick a catalog letter.
-A whole apple, orange, banana, or tomato is quantity 1 unit medium (or large), not oz. Count pieces of produce; use oz/g only when the food is a shredded pile or a weighed scoop.
+Do not output quantity, unit, grams, or calories. The host looks up USDA rows next, then a second step estimates portions.
+Split a mixed plate into the foods you can see (chicken, rice, broccoli, olive oil), not one generic "bowl" or "salad".
+Dressings, oils, and sauces count if you can see them.
 Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not invent sides that are not in the photo.`
 
-export const PHOTO_EXTRACT_USER = 'What foods are in this photo? Count items and name household units. Do not estimate grams or calories.'
+export const PHOTO_EXTRACT_USER =
+  'Name every food in this photo. Names and brands only. No quantity, grams, or calories. JSON only.'
+
+export const PHOTO_PORTION_SYSTEM = `You estimate how much of each visible food is on the plate.
+The host already named the foods and looked up USDA rows. Each catalog line is a household serving and its grams — use that as a visual ruler.
+Reply with JSON only:
+{"foods":[{"name":"carrot","brand":null,"quantity":40,"unit":"g"},{"name":"chicken","brand":null,"quantity":0.5,"unit":"cup"}]}
+Rules:
+- One object per visible food. Keep the grocery name; copy brand from a package if you see one.
+- quantity is a number. unit is g, oz, cup, tbsp, tsp, slice, medium, large, small, piece, serving, or bar.
+- Prefer grams when the pile is a scoop, shred, or mixed bowl. Use 1 medium / 1 large / 1 slice for a whole fruit, egg, or pizza slice that matches the USDA serving size.
+- A handful of almonds is not 12 servings. Compare the pile to the listed USDA grams.
+- Do not invent calories or pick a catalog letter. convert_portion on the host turns quantity and unit into grams and macros.
+- Skip plates and utensils.`
+
+export const PHOTO_PORTION_USER_TAIL =
+  'Look at the photo. For every visible food emit name, brand, quantity, and unit. Prefer grams or a fraction of the listed USDA serving. Do not invent calories. JSON only.'
 
 export const PICK_SYSTEM = `You pick a local USDA nutrition reference row.
 Calories and grams are already computed by convert_portion from USDA per-100 g values and household weights. Do not invent numbers or change the portion.
@@ -73,6 +87,16 @@ export const PICK_USER_TAIL =
 
 export function extractUserPrompt(meal: string): string {
   return `Extract foods and household units from this meal. Do not convert units or invent calories.\n${meal}`
+}
+
+export function photoPortionUser(names: string[], lines: string[]): string {
+  const visible = names.filter(Boolean).join(', ') || 'see photo'
+  return [
+    `Visible foods: ${visible}`,
+    'USDA catalog (household serving and grams — visual ruler, not a calorie guess):',
+    ...(lines.length ? lines : ['(no USDA rows)']),
+    PHOTO_PORTION_USER_TAIL,
+  ].join('\n')
 }
 
 export function pickUserPrompt(opts: {

@@ -29,6 +29,7 @@ from prompts import (  # noqa: E402
     EXTRACT_USER,
     PHOTO_EXTRACT_SYSTEM,
     PHOTO_EXTRACT_USER,
+    PHOTO_PORTION_SYSTEM,
     PICK_NONE_LINE,
     PICK_SYSTEM,
     PICK_USER_TAIL,
@@ -74,6 +75,21 @@ def extract_photo(image: Image.Image) -> dict:
             "content": [
                 {"type": "image", "image": image.convert("RGB")},
                 {"type": "text", "text": PHOTO_EXTRACT_USER},
+            ],
+        },
+    ]
+    raw = generate(MODEL, PROCESSOR, messages, 220, DEVICE, EXTRACT_PREFIX)
+    return {"raw": raw, "items": parse_foods(raw)}
+
+
+def portion_photo(image: Image.Image, catalog: str) -> dict:
+    messages = [
+        {"role": "system", "content": [{"type": "text", "text": PHOTO_PORTION_SYSTEM}]},
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": image.convert("RGB")},
+                {"type": "text", "text": catalog},
             ],
         },
     ]
@@ -157,11 +173,23 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             if path in {"/extract-photo", "/vlm/extract-photo"}:
-                image = _image_from_multipart(self.headers.get("Content-Type") or "", raw)
+                parsed = _parse_multipart(self.headers.get("Content-Type") or "", raw)
+                image = parsed.get("image")
+                if image is None:
+                    image = _image_from_bytes(raw)
                 if image is None:
                     self._json(400, {"error": "expected an image file"})
                     return
                 self._json(200, extract_photo(image))
+                return
+            if path in {"/portion-photo", "/vlm/portion-photo"}:
+                parsed = _parse_multipart(self.headers.get("Content-Type") or "", raw)
+                image = parsed.get("image")
+                catalog = str(parsed.get("catalog") or "")
+                if image is None:
+                    self._json(400, {"error": "expected an image file"})
+                    return
+                self._json(200, portion_photo(image, catalog))
                 return
         except Exception as exc:
             self._json(500, {"error": str(exc)})
@@ -169,19 +197,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": "not found"})
 
 
-def _image_from_multipart(content_type: str, body: bytes) -> Image.Image | None:
-    if "multipart/form-data" in content_type:
-        import email
-        import io
-
-        header = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n"
-        msg = email.message_from_bytes(header.encode() + body)
-        for part in msg.walk():
-            if part.get_content_maintype() == "image" or part.get_filename():
-                data = part.get_payload(decode=True)
-                if data:
-                    return Image.open(io.BytesIO(data)).convert("RGB")
-        # Fallback: skip preamble to first JPEG/PNG magic.
+def _image_from_bytes(body: bytes) -> Image.Image | None:
     import io
 
     for magic in (b"\xff\xd8\xff", b"\x89PNG"):
@@ -195,6 +211,37 @@ def _image_from_multipart(content_type: str, body: bytes) -> Image.Image | None:
         return Image.open(io.BytesIO(body)).convert("RGB")
     except Exception:
         return None
+
+
+def _parse_multipart(content_type: str, body: bytes) -> dict:
+    out: dict = {}
+    if "multipart/form-data" not in content_type:
+        image = _image_from_bytes(body)
+        if image is not None:
+            out["image"] = image
+        return out
+    import email
+    import io
+
+    header = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n"
+    msg = email.message_from_bytes(header.encode() + body)
+    for part in msg.walk():
+        name = part.get_param("name", header="content-disposition")
+        data = part.get_payload(decode=True)
+        if not name or data is None:
+            continue
+        if name == "catalog":
+            out["catalog"] = data.decode("utf-8", errors="replace")
+        elif name == "image" or part.get_content_maintype() == "image" or part.get_filename():
+            try:
+                out["image"] = Image.open(io.BytesIO(data)).convert("RGB")
+            except Exception:
+                pass
+    if "image" not in out:
+        image = _image_from_bytes(body)
+        if image is not None:
+            out["image"] = image
+    return out
 
 
 def main() -> None:

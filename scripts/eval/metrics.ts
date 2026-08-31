@@ -151,6 +151,7 @@ export function summarize(scores: CaseScore[]): MetricSummary {
     kcalMae: 0,
     kcalMdae: 0,
     kcalMape: 0,
+    kcalMapeMeal: 0,
     kcalWape: 0,
     kcalMdape: 0,
     within20: 0,
@@ -187,6 +188,7 @@ export function summarize(scores: CaseScore[]): MetricSummary {
     kcalMae: kcal.mae,
     kcalMdae: kcal.mdae,
     kcalMape: kcal.mape,
+    kcalMapeMeal: mealRel.mape,
     kcalWape: kcal.wape,
     kcalMdape: kcal.mdape,
     within20: kcal.within20,
@@ -227,6 +229,7 @@ export function formatSummary(title: string, s: MetricSummary): string {
   return [
     `### ${title} (n=${s.n})`,
     `- Calorie MAE: ${s.kcalMae.toFixed(1)} kcal (median ${s.kcalMdae.toFixed(1)})`,
+    `- Calorie MAPE: ${pct(s.kcalMapeMeal)} on meals ≥${MEAL_KCAL} kcal (n=${s.mealN}) · all-plate MAPE ${pct(s.kcalMape)}`,
     `- Calorie WAPE: ${pct(s.kcalWape)} of total gold kcal · median relative error ${pct(s.kcalMdape)}`,
     `- Within 20% / 50% of gold kcal: ${pct(s.within20)} / ${pct(s.within50)}`,
     `- Same, meals ≥${MEAL_KCAL} kcal (n=${s.mealN}): ${pct(s.within20Meal)} / ${pct(s.within50Meal)}`,

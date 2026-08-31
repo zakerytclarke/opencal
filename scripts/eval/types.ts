@@ -101,8 +101,9 @@ export type MetricSummary = {
   unmatchedRate: number
   kcalMae: number
   kcalMdae: number
-  kcalMape: number
-  kcalWape: number
+    kcalMape: number
+    kcalMapeMeal: number
+    kcalWape: number
   kcalMdape: number
   within20: number
   within50: number

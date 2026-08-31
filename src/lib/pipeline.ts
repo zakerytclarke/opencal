@@ -1,7 +1,7 @@
 import { extractFoods, isQuickCalorie, refineExtracted } from './extract'
-import { entryFromFood, mapToBaseFood, quickAddEntry, unmatchedEntry } from './foods'
+import { entryFromFood, mapToBaseFood, photoCatalogLines, quickAddEntry, unmatchedEntry } from './foods'
 import { uid } from './storage'
-import { extractMealPhoto, extractMealText } from './vlm'
+import { estimatePhotoPortions, extractMealPhoto, extractMealText } from './vlm'
 import type { DebugPath, ExtractedItem, LogEntry } from '../types'
 
 export type JobProgress = {
@@ -156,15 +156,28 @@ export async function logFromText(
 export async function logFromPhoto(image: Blob, date: string, handlers: JobHandlers = {}): Promise<LogEntry[]> {
   const batchId = uid()
   handlers.onProgress?.({ message: 'Reading the photo…', pct: 6 })
-  const extracted = await extractMealPhoto(image, (message, pct) => {
-    handlers.onProgress?.({ message, pct: pct != null ? Math.min(26, pct * 0.26) : 10 })
+  const identified = await extractMealPhoto(image, (message, pct) => {
+    handlers.onProgress?.({ message, pct: pct != null ? Math.min(22, pct * 0.22) : 10 })
   })
-  const items = extracted.items.length ? extracted.items : extractFoods(extracted.raw)
-  handlers.onExtracted?.(items)
+  const named = identified.items.length ? identified.items : extractFoods(identified.raw)
   handlers.onProgress?.({
-    message: items.length ? `Found ${items.length} food${items.length === 1 ? '' : 's'}` : 'No foods found',
-    pct: 28,
+    message: named.length ? `Found ${named.length} food${named.length === 1 ? '' : 's'}` : 'No foods found',
+    pct: 24,
   })
-  if (!items.length) return []
-  return resolveItems('(photo)', items, date, 'photo', batchId, extracted.raw, extracted.path, extracted.error, handlers)
+  if (!named.length) {
+    handlers.onExtracted?.([])
+    return []
+  }
+
+  const { names, lines } = photoCatalogLines(named)
+  handlers.onProgress?.({ message: 'Looking up USDA servings…', pct: 32 })
+  const portioned = await estimatePhotoPortions(image, names, lines, (message, pct) => {
+    handlers.onProgress?.({ message, pct: pct != null ? 32 + Math.min(20, pct * 0.2) : 40 })
+  })
+  const items = portioned.items.length ? portioned.items : named
+  handlers.onExtracted?.(items)
+  const extractRaw = [identified.raw, portioned.raw].filter(Boolean).join('\n---\n')
+  const extractError = identified.error || portioned.error
+  const extractPath = portioned.items.length ? portioned.path : identified.path
+  return resolveItems('(photo)', items, date, 'photo', batchId, extractRaw, extractPath, extractError, handlers)
 }

@@ -83,6 +83,7 @@ const macroSum = summarize([macros])
 check('protein MAE', macroSum.protein.mae === 10, String(macroSum.protein.mae))
 check('protein WAPE', macroSum.protein.wape === 10 / 20, String(macroSum.protein.wape))
 check('meal ≥50 kcal is counted', macroSum.mealN === 1 && macroSum.within20Meal === 0, `${macroSum.mealN} ${macroSum.within20Meal}`)
+check('meal MAPE is the close-enough APE', Math.abs(macroSum.kcalMapeMeal - 50 / 200) < 1e-9, String(macroSum.kcalMapeMeal))
 
 const failed = cases.filter((c) => !c.pass)
 console.log('| # | Test | Got | Result |')
