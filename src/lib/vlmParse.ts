@@ -33,16 +33,51 @@ export const SEARCH_FOODS_TOOL = {
 export const VLM_TOOLS = [SEARCH_FOODS_TOOL]
 
 export const SYSTEM_PROMPT = `You are OpenCal's on-device food logger.
-Identify every distinct food or drink.
 List of tools: ${JSON.stringify(VLM_TOOLS)}
-Call search_foods once per item. Estimate portions. Skip plates, utensils, napkins, and tableware.
-Do not invent calorie numbers.`
+Call search_foods once per distinct food or drink. Split combos into separate calls.
+query is a short grocery name. quantity is a number. unit is optional.
+Skip plates, utensils, and napkins. Do not invent calorie numbers.`
 
-export const PHOTO_USER_PROMPT =
-  'Log every visible food and drink using search_foods tool calls. Ignore plates and utensils.'
+export const PHOTO_SYSTEM_PROMPT = `You are OpenCal's food logger.
+Name every edible item in the photo, including fruit, drinks, snacks, and cooked dishes.
+Output a numbered list of short grocery names only. No other sentences.`
+
+export const PHOTO_USER_PROMPT = 'What foods are in this photo? Start with 1.'
+export const PHOTO_ASSISTANT_PREFIX = '1. '
+
+export const TEXT_FEWSHOT: { role: string; content: string }[] = [
+  { role: 'user', content: 'I ate a slice of pepperoni pizza and a coke' },
+  {
+    role: 'assistant',
+    content:
+      '<|tool_call_start|>[search_foods(query="pepperoni pizza", quantity=1, unit="slice"), search_foods(query="coke", quantity=1)]<|tool_call_end|>',
+  },
+]
 
 export function textUserPrompt(meal: string): string {
   return `Log this meal using search_foods tool calls:\n${meal}`
+}
+
+type ChatPart = { type?: string; text?: string }
+type ChatMessage = { role: string; content: string | ChatPart[] }
+
+/** LFM ChatML without Jinja — transformers.js cannot parse `{% generation %}`. */
+export function formatChatPrompt(
+  messages: ChatMessage[],
+  addGenerationPrompt = true,
+  assistantPrefix = '',
+): string {
+  const parts = ['<|startoftext|>']
+  for (const message of messages) {
+    const body = Array.isArray(message.content)
+      ? message.content
+          .map((p) => (p.type === 'image' ? '<image>' : (p.text ?? '')))
+          .join('')
+      : message.content
+    parts.push(`<|im_start|>${message.role}\n${body}<|im_end|>\n`)
+  }
+  if (addGenerationPrompt) parts.push(`<|im_start|>assistant\n${assistantPrefix}`)
+  return parts.join('')
 }
 
 function toCall(query: unknown, quantity: unknown, unit: unknown): ToolCall | null {
@@ -144,7 +179,38 @@ function jsonBlobs(text: string): string[] {
   return blobs
 }
 
-export function parseToolCalls(text: string): ToolCall[] {
+const NON_FOOD = /\b(background|plate|platter|bowl only|cutting board|table|tableware|utensil|fork|knife|spoon|napkin|flower|camera|hand|person|surface|wooden|maker|appliance|board)\b/i
+
+function parseNumberedFoods(text: string): ToolCall[] {
+  const calls: ToolCall[] = []
+  const re = /(?:^|\n)\s*(?:\d+[.)]\s+|[-*•]\s+)([^\n]+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(stripSpecialTokens(text)))) {
+    const name = m[1].replace(/[*_]/g, '').replace(/\s*\([^)]*\)\s*/g, ' ').trim()
+    if (!name || name.length > 48 || name.split(/\s+/).length > 8 || NON_FOOD.test(name)) continue
+    const extracted = extractFoods(name)[0]
+    const call = extracted
+      ? toCall(extracted.query, extracted.quantity, extracted.unit)
+      : toCall(name, 1, null)
+    if (call) calls.push(call)
+  }
+  return calls
+}
+
+function expandCombined(calls: ToolCall[]): ToolCall[] {
+  if (calls.length !== 1) return calls
+  const only = calls[0]
+  if (!/\b(?:and|with|,)\b/i.test(only.query)) return calls
+  const split = extractFoods(only.query)
+  if (split.length < 2) return calls
+  return split.map((item) => ({
+    query: item.query,
+    quantity: item.quantity * only.quantity,
+    unit: item.unit ?? only.unit,
+  }))
+}
+
+function parseToolCallsInner(text: string): ToolCall[] {
   const trimmed = text.trim()
   if (!trimmed) return []
 
@@ -155,6 +221,9 @@ export function parseToolCalls(text: string): ToolCall[] {
 
   const python = parsePythonToolCalls(trimmed)
   if (python.length) return python
+
+  const listed = parseNumberedFoods(trimmed)
+  if (listed.length) return listed
 
   for (const blob of jsonBlobs(trimmed)) {
     try {
@@ -182,8 +251,12 @@ export function parseToolCalls(text: string): ToolCall[] {
   return []
 }
 
+export function parseToolCalls(text: string): ToolCall[] {
+  return expandCombined(parseToolCallsInner(text))
+}
+
 export function itemsFromModelText(raw: string, fallbackText?: string): ExtractedItem[] {
-  const calls = parseToolCalls(raw)
+  const calls = parseToolCalls(stripSpecialTokens(raw))
   if (calls.length) {
     return calls.map((c) => ({
       raw,

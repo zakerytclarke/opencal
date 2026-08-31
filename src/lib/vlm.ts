@@ -1,8 +1,12 @@
 import { extractFoods } from './extract'
 import type { DebugPath, ExtractedItem } from '../types'
 import {
+  PHOTO_ASSISTANT_PREFIX,
+  PHOTO_SYSTEM_PROMPT,
   PHOTO_USER_PROMPT,
   SYSTEM_PROMPT,
+  TEXT_FEWSHOT,
+  formatChatPrompt,
   itemsFromModelText,
   parseToolCalls,
   stripSpecialTokens,
@@ -33,10 +37,6 @@ type TensorLike = { dims: number[] }
 
 type Session = {
   processor: {
-    apply_chat_template: (
-      messages: unknown[],
-      opts: { add_generation_prompt: boolean; tokenize?: boolean },
-    ) => string
     tokenizer: (
       text: string,
       opts?: { add_special_tokens?: boolean },
@@ -226,7 +226,7 @@ export async function analyzeMealPhoto(image: Blob, onProgress?: ProgressFn): Pr
     onProgress?.('Reading the photo…', 82)
     const img = await sess.loadImage(image)
     const messages = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: PHOTO_SYSTEM_PROMPT },
       {
         role: 'user',
         content: [
@@ -235,12 +235,13 @@ export async function analyzeMealPhoto(image: Blob, onProgress?: ProgressFn): Pr
         ],
       },
     ]
-    const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true })
+    const prompt = formatChatPrompt(messages, true, PHOTO_ASSISTANT_PREFIX)
     const inputs = await sess.runProcessor(img, prompt)
     onProgress?.('Finding foods…', 88)
     const raw = await decodeGeneration(sess, inputs)
     onProgress?.('Matching the local database…', 94)
-    return finish(raw, itemsFromModelText(raw), started)
+    const labeled = /^1\./.test(raw) ? raw : `${PHOTO_ASSISTANT_PREFIX}${raw}`
+    return finish(labeled, itemsFromModelText(labeled), started)
   } catch (err) {
     return fail(err, started, [])
   }
@@ -253,9 +254,10 @@ export async function analyzeMealText(text: string, onProgress?: ProgressFn): Pr
     onProgress?.('Running LFM2.5-VL…', 82)
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
+      ...TEXT_FEWSHOT,
       { role: 'user', content: textUserPrompt(text) },
     ]
-    const prompt = sess.processor.apply_chat_template(messages, { add_generation_prompt: true, tokenize: false })
+    const prompt = formatChatPrompt(messages)
     const inputs = await sess.processor.tokenizer(prompt, { add_special_tokens: false })
     onProgress?.('Finding foods…', 88)
     const raw = await decodeGeneration(sess, inputs)

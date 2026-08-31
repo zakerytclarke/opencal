@@ -1,4 +1,4 @@
-import { itemsFromModelText, parseToolCalls } from '../src/lib/vlmParse.ts'
+import { formatChatPrompt, itemsFromModelText, parseToolCalls } from '../src/lib/vlmParse.ts'
 
 const cases: { name: string; raw: string; expect: { query: string; quantity?: number; unit?: string | null }[] }[] = [
   {
@@ -18,12 +18,26 @@ const cases: { name: string; raw: string; expect: { query: string; quantity?: nu
     ],
   },
   {
+    name: 'combo query split',
+    raw: '<|tool_call_start|>[search_foods(query="chicken bowl with rice and guacamole", quantity=1, unit="bowl")]<|tool_call_end|>',
+    expect: [
+      { query: 'chicken bowl', quantity: 1 },
+      { query: 'rice', quantity: 1 },
+      { query: 'guacamole', quantity: 1 },
+    ],
+  },
+  {
     name: 'JSON tools envelope',
     raw: '{"tools":[{"name":"search_foods","arguments":{"query":"latte","quantity":1,"unit":"grande"}},{"name":"search_foods","arguments":{"query":"blueberry muffin","quantity":1}}]}',
     expect: [
       { query: 'latte', quantity: 1, unit: 'grande' },
       { query: 'blueberry muffin', quantity: 1 },
     ],
+  },
+  {
+    name: 'numbered photo list',
+    raw: "Here's a list of foods:\n1. 5 bananas<|im_end|>\n2. Yellow background\n3. Toast",
+    expect: [{ query: 'bananas', quantity: 5 }, { query: 'Toast' }],
   },
   {
     name: 'foods array',
@@ -60,6 +74,17 @@ if (items[0]?.query !== 'banana') {
   console.error('FAIL itemsFromModelText', items)
 } else {
   console.log('OK itemsFromModelText')
+}
+
+const prompt = formatChatPrompt([
+  { role: 'system', content: 'sys' },
+  { role: 'user', content: [{ type: 'image' }, { type: 'text', text: 'look' }] },
+])
+if (!prompt.includes('<|startoftext|>') || !prompt.includes('<image>look') || !prompt.endsWith('<|im_start|>assistant\n')) {
+  failed++
+  console.error('FAIL formatChatPrompt', prompt)
+} else {
+  console.log('OK formatChatPrompt')
 }
 
 if (failed) {

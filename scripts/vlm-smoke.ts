@@ -22,8 +22,8 @@ function check(label: string, raw: string, queries: string[], path: string, spec
   const joined = queries.join(' | ')
   const hits = spec.want.filter((w) => includesAny(joined || raw, [w]))
   const itemsOk = queries.length >= (spec.minItems ?? Math.min(spec.want.length, 1))
-  const modelOk = path === 'vlm' || queries.length > 0
-  const ok = itemsOk && hits.length >= Math.min(1, spec.want.length) && modelOk
+  const modelOk = path === 'vlm'
+  const ok = itemsOk && hits.length >= Math.min(spec.want.length, 2) && modelOk
   console.log(
     `${ok ? 'OK' : 'FAIL'} ${label} path=${path} items=${queries.length} hits=${hits.join(',') || '-'} raw=${raw.slice(0, 220).replace(/\s+/g, ' ')}`,
   )
@@ -61,7 +61,7 @@ const imageCases: { file: string; spec: Expectation }[] = [
   { file: 'banana.jpg', spec: { name: 'banana photo', want: ['banana'], minItems: 1 } },
   { file: 'eggs.jpg', spec: { name: 'eggs photo', want: ['egg'], minItems: 1 } },
   { file: 'pizza.jpg', spec: { name: 'pizza photo', want: ['pizza'], minItems: 1 } },
-  { file: 'bowl.jpg', spec: { name: 'salad bowl photo', want: ['salad', 'chicken', 'avocado', 'tomato', 'vegetable', 'bowl'], minItems: 1 } },
+  { file: 'bowl.jpg', spec: { name: 'salad bowl photo', want: ['chicken', 'tomato', 'egg'], minItems: 2 } },
 ]
 
 console.log('loading LFM2.5-VL…')
