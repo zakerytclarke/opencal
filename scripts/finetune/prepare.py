@@ -41,11 +41,14 @@ BANNED_IMAGES = {
 }
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from portions import MASS_G, NAMED_ML, VOLUME_ML, portion_tool_line  # noqa: E402
+from portions import MASS_G, NAMED_ML, VOLUME_ML, convert_portion, portion_tool_line  # noqa: E402
 from prompts import (  # noqa: E402
     COACH_SYSTEM,
     EXTRACT_SYSTEM,
     EXTRACT_USER,
+    GRAM_SYSTEM,
+    GRAM_IMAGE_USER,
+    GRAM_TEXT_USER,
     PHOTO_EXTRACT_SYSTEM,
     PHOTO_EXTRACT_USER,
     PHOTO_PORTION_SYSTEM,
@@ -1097,6 +1100,253 @@ def portion_record(
     }
 
 
+def gram_item(name: str, grams: float) -> dict:
+    g = max(5, min(1000, round(float(grams))))
+    return {"name": name.lower() if name != name.upper() else name, "brand": None, "grams": g}
+
+
+def gram_text_record(meal: str, foods: list[dict], source: str, ident: str) -> dict:
+    return {
+        "task": "gram_text",
+        "image": None,
+        "messages": [
+            {"role": "system", "content": GRAM_SYSTEM},
+            {"role": "user", "content": GRAM_TEXT_USER.format(meal=meal)},
+            {"role": "assistant", "content": json_foods(foods)},
+        ],
+        "meta": {"id": ident, "meal": meal, "source": source},
+    }
+
+
+def build_grams_text(
+    foods: list[dict], n: int, rng: random.Random, banned: set[str]
+) -> list[dict]:
+    """Transcript → grams rows so the same model reads text and photos identically."""
+    pool = catalog(foods)
+    if not pool:
+        print(" gram_text skipped: empty catalog")
+        return []
+    rows: list[dict] = []
+    meals = 0
+    attempts = 0
+    while meals < n and attempts < n * 30:
+        attempts += 1
+        k = rng.choices([1, 2, 3], weights=[45, 35, 20])[0]
+        if len(pool) < k:
+            continue
+        chosen = rng.sample(pool, k)
+        bits: list[str] = []
+        items: list[dict] = []
+        # Force a measurable unit on at least one item so grams have variety.
+        force_idx = rng.randrange(k)
+        for i, food in enumerate(chosen):
+            force = None
+            if i == force_idx:
+                cycled = FORCE_UNITS[meals % len(FORCE_UNITS)]
+                house_u = parse_label(food.get("serveLabel") or "")[1]
+                if cycled in MASS_G or cycled in VOLUME_ML or cycled in NAMED_ML:
+                    force = cycled
+                elif house_u:
+                    force = house_u if rng.random() < 0.5 else cycled
+                else:
+                    force = cycled
+            # phrase_for returns quantity + unit; convert_portion → grams via USDA density.
+            spoken, item = phrase_for(food, rng, force)
+            qty = float(item.get("quantity") or 1)
+            unit = item.get("unit") or ""
+            try:
+                grams = float(convert_portion(food, qty, unit).get("grams") or 0)
+            except Exception:
+                grams = 0.0
+            if not grams or grams < 3 or grams > 1500:
+                continue
+            bits.append(spoken)
+            items.append(gram_item(short_name(food["name"]), grams))
+        if not items:
+            continue
+        meal = rng.choice(MEAL_TEMPLATES).format(items=join_bits(bits, rng))
+        if not sample_ok(meal, banned):
+            continue
+        rows.append(gram_text_record(meal, items, "synth-text-gram", f"gramtext-{meals}"))
+        meals += 1
+    print(f" gram_text {meals} meals → {len(rows)} rows")
+    return rows
+
+
+def _serve_label_phrase(label: str) -> str:
+    """Render a USDA serveLabel like '1 medium' or '1 fl oz (with ice)' as a clean spoken phrase."""
+    label = (label or "").strip()
+    if not label:
+        return ""
+    # Drop parentheticals ("(with ice)", "(amount to make 1/2 cup)").
+    label = re.sub(r"\s*\(.*?\)\s*", " ", label)
+    # Drop comma-qualifiers ("1 slice, large" -> "1 slice").
+    label = label.split(",")[0]
+    label = re.sub(r"\s+", " ", label).strip().lower()
+    if len(label) < 2 or label.strip(" ,:") in ("", "-", "n/a", "na"):
+        return ""
+    # Drop labels that look like instructions, not portion quantities.
+    if re.search(r"\b(make|serving|amount|quantity|as needed|to taste)\b", label):
+        return ""
+    return label
+
+
+def build_grams_usda(
+    foods: list[dict], n: int, rng: random.Random, banned: set[str]
+) -> list[dict]:
+    """Transcript→grams rows mined from the USDA serveLabel/serveG pairs.
+
+    Weights favour small-portion anchors (which is where the model is least
+    calibrated) so every label/gram pair in the DB gets a fair chance to be
+    seen — but the <50 g bucket dominates the training mix.
+    """
+    pool = []
+    for f in foods:
+        label = (f.get("serveLabel") or "").strip()
+        g = f.get("serveG")
+        name = (f.get("name") or "").strip()
+        if not label or not g or not name:
+            continue
+        # Skip ultra-generic single-word categories (snacks, beverages, ...).
+        lname = name.lower()
+        if len(name.split()) < 2 and len(name) < 9:
+            continue
+        if "baby" in lname or "infant" in lname:
+            continue
+        g = float(g)
+        if g < 5 or g > 1000:
+            continue
+        # Down-weight big-portion rows; keep small ones 1:1.
+        if g < 40:
+            w = 1.0
+        elif g < 80:
+            w = 0.5
+        elif g < 150:
+            w = 0.2
+        else:
+            w = 0.05
+        label_phrase = _serve_label_phrase(label)
+        if not label_phrase or len(label_phrase) < 3:
+            continue
+        pool.append((f, g, label, label_phrase, w))
+    if not pool:
+        print(" gram_usda skipped: no serveLabel rows")
+        return []
+
+    weights = [p[4] for p in pool]
+    rows: list[dict] = []
+    seen_pairs: set[tuple[str, float, str]] = set()
+    attempts = 0
+    while len(rows) < n and attempts < n * 40:
+        attempts += 1
+        f, g, label, label_phrase, _ = rng.choices(pool, weights=weights, k=1)[0]
+        key = (f["name"].lower(), g, label)
+        if key in seen_pairs:
+            continue
+        seen_pairs.add(key)
+        name = short_name(f["name"])
+        # Spoken phrase: "one {label_phrase} of {name}" — matches transcript register.
+        if label_phrase.startswith(("1", "0.")):
+            m = re.match(r"^([\d.]+)\s+(.+)$", label_phrase)
+            if m:
+                q, rest = m.group(1), m.group(2)
+                if q == "1":
+                    spoken = f"one {rest} of {name}"
+                else:
+                    spoken = f"{q} {rest}s of {name}" if not rest.endswith("s") else f"{q} {rest} of {name}"
+            else:
+                spoken = f"{label_phrase} of {name}"
+        else:
+            spoken = f"{label_phrase} of {name}"
+        template = rng.choice(MEAL_TEMPLATES)
+        meal = template.format(items=spoken)
+        if not sample_ok(meal, banned):
+            continue
+        rows.append(gram_text_record(meal, [gram_item(name, g)], "usda-serve-gram", f"usdagram-{len(rows)}"))
+    # dedupe by (food, grams, label) already enforced above; report
+    small = sum(1 for r in rows if int(json.loads(r["messages"][2]["content"])["foods"][0]["grams"]) <= 50)
+    print(f" gram_usda {len(rows)} rows ({small} with serve<=50g, {len(pool)} catalog rows eligible)")
+    return rows
+
+
+def gram_record(path: Path, foods: list[dict], source: str, ident: str) -> dict:
+    return {
+        "task": "gram_image",
+        "image": str(path),
+        "messages": [
+            {"role": "system", "content": GRAM_SYSTEM},
+            {"role": "user", "content": GRAM_IMAGE_USER},
+            {"role": "assistant", "content": json_foods(foods)},
+        ],
+        "source": source,
+        "ident": ident,
+    }
+
+
+def build_grams(limit: int, rng: random.Random, foods: list[dict]) -> list[dict]:
+    try:
+        from PIL import Image
+    except ImportError:
+        print("PIL missing — skip gram mode")
+        return []
+
+    meta_path, snap = n5k_paths()
+    if not meta_path or not meta_path.exists():
+        print("Nutrition5k metadata missing — skip gram mode")
+        return []
+    if not snap:
+        print("Nutrition5k image snapshot missing — skip gram mode")
+        return []
+
+    IMG_DIR.mkdir(parents=True, exist_ok=True)
+    samples = []
+    with meta_path.open() as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                samples.append(json.loads(line))
+    rng.shuffle(samples)
+    skip = n5k_eval_ids()
+    if skip:
+        print(f" gram mode skipping {len(skip)} held-out eval dishes")
+
+    plates = 0
+    rows: list[dict] = []
+    for sample in samples:
+        if limit and plates >= limit:
+            break
+        sid = str(sample.get("id") or "")
+        if sid in skip:
+            continue
+        rel = (sample.get("file_name") or "").replace("\\", "/")
+        src = snap / rel
+        if not src.exists():
+            src = snap / "test" / Path(rel).name
+        if not src.exists():
+            continue
+        identified: list[dict] = []
+        for ing in (sample.get("ingredients") or [])[:8]:
+            name = re.sub(r"\(raw\)|\(cooked\)", "", (ing.get("name") or "").lower()).strip()
+            grams = float(ing.get("grams") or 0)
+            if not name or grams < 8:
+                continue
+            identified.append(gram_item(name, grams))
+        if not identified:
+            continue
+        out_path = IMG_DIR / f"n5k-{sid}.jpg"
+        if not out_path.exists():
+            try:
+                image = Image.open(src).convert("RGB")
+            except Exception:
+                continue
+            image.thumbnail((512, 512))
+            image.save(out_path, quality=85)
+        rows.append(gram_record(out_path, identified, "nutrition5k-gram", f"gram-{sid}"))
+        plates += 1
+    print(f" gram mode {plates} plates → {len(rows)} rows")
+    return rows
+
+
 def build_fixtures(upsample: int, rng: random.Random, catalog: list[dict]) -> list[dict]:
     """Accurate labels for train photos only. banana.jpg and eggs.jpg stay out."""
     pizza = ROOT / "scripts/fixtures/pizza.jpg"
@@ -1371,11 +1621,15 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser()
+    p.add_argument("--mode", choices=["full", "gram"], default="full", help="gram = single-pass gram-estimate rows only")
+    p.add_argument("--out", default="", help="Override output dir (defaults to evals/data/finetune)")
     p.add_argument("--synth", type=int, default=3500)
     p.add_argument("--combo", type=int, default=700)
     p.add_argument("--pick", type=int, default=0, help="Lettered USDA pick examples; 0 = off (host maps)")
     p.add_argument("--coach", type=int, default=2000)
     p.add_argument("--n5k", type=int, default=0, help="Max Nutrition5k plates (0 = all train-eligible)")
+    p.add_argument("--gram-text", dest="gram_text", type=int, default=3500, help="Synthesized transcript→grams rows (gram mode)")
+    p.add_argument("--gram-usda", dest="gram_usda", type=int, default=0, help="USDA serveLabel→grams rows (gram mode, 0=off)")
     p.add_argument("--fixture-upsample", type=int, default=96)
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--skip-n5k", action="store_true")
@@ -1385,6 +1639,74 @@ def main() -> None:
     foods = load_json(FOODS_PATH)["foods"]
     banned = banned_texts()
     print(f"catalog search foods: {len(catalog(foods))} · banned eval strings: {len(banned)}")
+
+    if args.mode == "gram":
+        out_root = Path(args.out) if args.out else OUT_DIR
+        out_root.mkdir(parents=True, exist_ok=True)
+        (out_root / "images").mkdir(parents=True, exist_ok=True)
+        rows: list[dict] = []
+        rows += build_grams_text(foods, args.gram_text, rng, banned)
+        if args.gram_usda > 0:
+            rows += build_grams_usda(foods, args.gram_usda, rng, banned)
+        if not args.skip_n5k:
+            rows += build_grams(args.n5k, rng, foods)
+        if not rows:
+            raise SystemExit("no gram rows produced")
+        # split 10% into val (per source, so val sees both modalities)
+        text_rows = [r for r in rows if r["task"] == "gram_text"]
+        img_rows = [r for r in rows if r["task"] != "gram_text"]
+        val: list[dict] = []
+        train: list[dict] = []
+        for group in (text_rows, img_rows):
+            if not group:
+                continue
+            g = list(group)
+            rng.shuffle(g)
+            n_val = max(1, len(g) // 20)
+            val.extend(g[:n_val])
+            train.extend(g[n_val:])
+        # Upsample small-plate image rows in TRAIN ONLY (the <40 g bucket is
+        # the calibration failure mode; val stays unchanged to avoid dup leakage).
+        boosted: list[dict] = []
+        small = 0
+        for r in train:
+            if r["task"] == "gram_image":
+                tot = 0.0
+                for f in json.loads(r["messages"][2]["content"]).get("foods", []):
+                    try:
+                        tot += float(f.get("grams") or 0)
+                    except (TypeError, ValueError):
+                        pass
+                if 0 < tot < 40:
+                    small += 1
+                    boosted += [r, r, r]
+                    continue
+            boosted.append(r)
+        train = boosted
+        print(f" small-plate upsample: {small} image rows <40g tripled in train")
+        rng.shuffle(train)
+        rng.shuffle(val)
+        write_jsonl(out_root / "train.jsonl", train)
+        write_jsonl(out_root / "val.jsonl", val)
+        by_task: dict[str, int] = {}
+        for r in train:
+            by_task[r["task"]] = by_task.get(r["task"], 0) + 1
+        by_task_val: dict[str, int] = {}
+        for r in val:
+            by_task_val[r["task"]] = by_task_val.get(r["task"], 0) + 1
+        summary = {
+            "train": len(train),
+            "val": len(val),
+            "by_task": by_task,
+            "by_task_val": by_task_val,
+            "banned": len(banned),
+            "images": sum(1 for r in train if r.get("image")),
+            "mode": "gram",
+        }
+        (out_root / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+        print(f"wrote {out_root / 'train.jsonl'} ({len(train)} train, {len(val)} val) [mode=gram]")
+        print("tasks", by_task, "val", by_task_val, "images", summary["images"])
+        return
 
     parts = {
         "opencal_train": build_opencal_train(banned, foods),

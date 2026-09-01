@@ -30,7 +30,7 @@ export type AnalyzeResult = {
   ms: number
 }
 
-export const HF_VLM_ID = 'onnx-community/LFM2.5-VL-450M-ONNX'
+export const HF_VLM_ID = 'opencal/opencal-base'
 export const LOCAL_ONNX_ID = '/models/lfm25vl-opencal'
 /** Active transformers.js model id. Hugging Face only if no local ONNX is present. */
 export let VLM_ID = HF_VLM_ID

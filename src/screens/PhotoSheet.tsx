@@ -12,7 +12,8 @@ type Props = {
 }
 
 export function PhotoSheet({ date, onClose, onLog }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const uploadRef = useRef<HTMLInputElement>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [status, setStatus] = useState('Snap a meal. The vision model runs on this device.')
   const [busy, setBusy] = useState(false)
@@ -28,6 +29,8 @@ export function PhotoSheet({ date, onClose, onLog }: Props) {
 
   async function onFile(file: File | undefined) {
     if (!file) return
+    if (cameraRef.current) cameraRef.current.value = ''
+    if (uploadRef.current) uploadRef.current.value = ''
     if (previewUrl) URL.revokeObjectURL(previewUrl)
     const url = URL.createObjectURL(file)
     setPreviewUrl(url)
@@ -67,16 +70,33 @@ export function PhotoSheet({ date, onClose, onLog }: Props) {
         <span className="sheet-spacer" />
       </div>
       <input
-        ref={inputRef}
+        ref={cameraRef}
         type="file"
         accept="image/*"
         capture="environment"
         hidden
         onChange={(e) => void onFile(e.target.files?.[0])}
       />
-      <button type="button" className="photo-stage" onClick={() => inputRef.current?.click()}>
-        {previewUrl ? <img src={previewUrl} alt="Meal preview" /> : <span>Tap to take or upload a photo</span>}
+      <input
+        ref={uploadRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => void onFile(e.target.files?.[0])}
+      />
+      <button type="button" className="photo-stage" onClick={() => cameraRef.current?.click()}>
+        {previewUrl ? <img src={previewUrl} alt="Meal preview" /> : <span>Tap to take a photo</span>}
       </button>
+      <div className="photo-actions">
+        <button type="button" className="ghost" onClick={() => uploadRef.current?.click()}>
+          Upload a photo
+        </button>
+        {previewUrl && (
+          <button type="button" className="text-btn" onClick={() => cameraRef.current?.click()}>
+            Retake
+          </button>
+        )}
+      </div>
       {busy && (
         <div className="progress" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
           <i style={{ width: `${pct}%` }} />

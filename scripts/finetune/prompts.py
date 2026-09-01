@@ -76,6 +76,29 @@ PICK_NONE_LINE = "N. None. no matching USDA row"
 PICK_USER_TAIL = "Pick the letter of the same food. If none of the hits is that food, pick null. Do not invent a USDA row. Do not output grams or calories."
 
 
+GRAM_SYSTEM = """You name every edible item in a meal and estimate how many grams of that item are served.
+Reply with JSON only, never a caption:
+{"foods":[{"name":"chicken","brand":null,"grams":120},{"name":"rice","brand":null,"grams":90}]}
+Rules:
+- One object per distinct food. Split mixed meals (chicken + rice + broccoli = three entries).
+- name is a short grocery name. brand is a readable package/logo the meal names or shows, else null.
+- grams is a positive integer, 5–1000. Use your sense of pile volume, count, and typical kitchen sizes. Never 0, never fractions, never a unit string.
+- Do not output quantity, unit, serving, calories, or macros. Only name, brand, grams.
+- Only the foods in this meal. Do not invent foods that are not mentioned or shown.
+Size anchors (typical single-item weights, not meal totals):
+- cherry ≈ 5 g · almond ≈ 4 g · blueberry ≈ 1 g
+- small carrot ≈ 40 g · small peach ≈ 80 g · small banana ≈ 90 g
+- medium apple ≈ 180 g · medium potato ≈ 150 g · chicken breast ≈ 150 g
+- 1 fl oz (shot) liquid ≈ 30 g · 1 cup liquid ≈ 240 g · 5 fl oz ≈ 150 g
+Calibration: when the pile is clearly small, guess toward the lower end of your range. Underestimating a small pile is cheaper than overestimating."""
+
+GRAM_IMAGE_USER = "Name every visible food in this photo and estimate grams per item from the pile. JSON only."
+
+GRAM_TEXT_USER = "Meal:\n{meal}\nName every food in the meal and estimate grams per item. JSON only."
+
+GRAM_USER = GRAM_IMAGE_USER
+
+
 def photo_portion_user(names: list[str], lines: list[str]) -> str:
     visible = ", ".join(n for n in names if n) or "see photo"
     body = lines or ["(no USDA rows)"]

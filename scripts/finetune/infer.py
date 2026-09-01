@@ -22,6 +22,9 @@ from prompts import (  # noqa: E402
     COACH_SYSTEM,
     EXTRACT_SYSTEM,
     EXTRACT_USER,
+    GRAM_IMAGE_USER,
+    GRAM_SYSTEM,
+    GRAM_TEXT_USER,
     PHOTO_EXTRACT_SYSTEM,
     PHOTO_EXTRACT_USER,
     PHOTO_PORTION_SYSTEM,
@@ -76,7 +79,12 @@ def parse_foods(text: str) -> list[dict]:
             unit = row.get("unit")
             if unit in ("null", "none", ""):
                 unit = None
-            foods.append({"name": name, "brand": row.get("brand"), "quantity": qty, "unit": unit})
+            grams = row.get("grams")
+            try:
+                grams = float(grams) if grams is not None else None
+            except (TypeError, ValueError):
+                grams = None
+            foods.append({"name": name, "brand": row.get("brand"), "quantity": qty, "unit": unit, "grams": grams})
         if foods:
             return foods
     return parse_numbered(cleaned)
@@ -236,6 +244,7 @@ def generate(model, processor, messages: list[dict], max_new: int, device, prefi
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--model", required=True, help="HF id or local checkpoint")
+    p.add_argument("--task", default="extract", choices=["extract", "gram"], help="gram = single-pass name+grams")
     p.add_argument("--tag", default="run", help="Name for this eval (baseline, finetuned, …)")
     p.add_argument("--split", default="test")
     p.add_argument("--out", default="")
@@ -246,6 +255,7 @@ def main() -> None:
     p.add_argument("--skip-coach", action="store_true")
     p.add_argument("--skip-cite", action="store_true")
     p.add_argument("--no-rag", action="store_true", help="Skip USDA catalog + portion pass")
+    p.add_argument("--gram-text", action="store_true", help="Also run transcript→grams on text.json split")
     args = p.parse_args()
 
     out_dir = Path(args.out) if args.out else ROOT / "evals" / "data" / "finetune" / "preds" / args.tag
@@ -273,8 +283,76 @@ def main() -> None:
         text_rows = text_rows[: args.limit]
         image_rows = image_rows[: args.limit]
 
-    extracts = []
     catalog = load_json(ROOT / "public/foods.json")["foods"]
+    extracts = []
+    if args.task == "gram":
+        # Image gram on N5k held-out plates (always runs).
+        test = load_json(ROOT / "evals/splits/images.n5k.json")["test"]
+        if args.limit:
+            test = test[: args.limit]
+        for i, row in enumerate(test, 1):
+            path = ROOT / row["path"]
+            if not path.exists():
+                extracts.append({"id": row["id"], "modality": "image", "raw": "", "items": [], "error": f"missing {path}"})
+                continue
+            img = Image.open(path).convert("RGB")
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": GRAM_SYSTEM}]},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": img},
+                        {"type": "text", "text": GRAM_IMAGE_USER},
+                    ],
+                },
+            ]
+            raw = generate(model, processor, messages, 220, device, EXTRACT_PREFIX)
+            foods = parse_foods(raw)
+            for f in foods:
+                if f.get("grams") is None:
+                    f["grams"] = None
+            extracts.append(
+                {
+                    "id": row["id"],
+                    "modality": "image",
+                    "raw": raw,
+                    "items": foods,
+                    "path": row["path"],
+                    "nutr": row.get("nutrition"),
+                }
+            )
+            print(f"GRAM-IMG {i}/{len(test)} {row['id']} → {foods or raw[:80]!r}", flush=True)
+        if args.gram_text:
+            # Transcript grams on the text.json held-out split.
+            test = load_json(ROOT / "evals/splits/text.json")["test"]
+            if args.limit:
+                test = test[: args.limit]
+            for i, row in enumerate(test, 1):
+                meal = str(row["text"])
+                messages = [
+                    {"role": "system", "content": [{"type": "text", "text": GRAM_SYSTEM}]},
+                    {"role": "user", "content": [{"type": "text", "text": GRAM_TEXT_USER.format(meal=meal)}]},
+                ]
+                raw = generate(model, processor, messages, 220, device, EXTRACT_PREFIX)
+                foods = parse_foods(raw)
+                for f in foods:
+                    if f.get("grams") is None:
+                        f["grams"] = None
+                extracts.append(
+                    {
+                        "id": row["id"],
+                        "modality": "text",
+                        "raw": raw,
+                        "items": foods,
+                        "text": meal,
+                        "nutr": None,
+                    }
+                )
+                print(f"GRAM-TEXT {i}/{len(test)} {row['id']} → {foods or raw[:80]!r}", flush=True)
+        (out_dir / "extracts.json").write_text(json.dumps(extracts, indent=2) + "\n")
+        print(f"wrote {out_dir}")
+        return
+
     if not args.skip_text:
         for row in text_rows:
             messages = [
@@ -375,7 +453,6 @@ def main() -> None:
     pick_split = ROOT / "evals/splits/pick.json"
     pick_preds = []
     if args.pick and pick_split.exists():
-        catalog = load_json(ROOT / "public/foods.json")["foods"]
         for case in load_json(pick_split)["test"]:
             built = build_pick_case(catalog, case)
             messages = [

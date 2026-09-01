@@ -295,6 +295,7 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
   display: grid; place-items: center; padding: 0;
 }
 .photo-stage img { width: 100%; height: 100%; object-fit: cover; }
+.photo-actions { display: flex; justify-content: center; gap: 10px; align-items: center; margin: 0 0 12px; }
 .progress { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-bottom: 10px; }
 .progress i { display: block; height: 100%; background: var(--lake); }
 .caption { color: var(--slate); font-style: italic; word-break: break-word; }
