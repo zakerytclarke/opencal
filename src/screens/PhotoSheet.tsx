@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { extractFoods } from '../lib/extract'
 import { resolveExtracted } from '../lib/foods'
-import { getVlmStatus, subscribeVlm, warmupVlm } from '../lib/vlm'
+import { ModelLoadError, getVlmStatus, subscribeVlm, warmupVlm } from '../lib/vlm'
 import { foodsFromImage } from '../lib/vision'
 import type { LogEntry } from '../types'
 
@@ -49,7 +49,11 @@ export function PhotoSheet({ date, onClose, onLog }: Props) {
       setStatus(resolved.length ? 'Looks right? Log it.' : 'Could not match foods. Try search.')
       setPct(100)
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Vision model failed to load. Try search instead.')
+      if (err instanceof ModelLoadError) {
+        setStatus(`The on-device vision model failed to load. ${err.message}`)
+      } else {
+        setStatus(err instanceof Error ? err.message : 'Vision model failed to load. Try search instead.')
+      }
     } finally {
       setBusy(false)
     }
@@ -98,8 +102,8 @@ export function PhotoSheet({ date, onClose, onLog }: Props) {
         )}
       </div>
       {busy && (
-        <div className="progress" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-          <i style={{ width: `${pct}%` }} />
+        <div className="progress" aria-valuenow={vlm.state === 'downloading' ? vlm.pct : pct} aria-valuemin={0} aria-valuemax={100}>
+          <i style={{ width: `${vlm.state === 'downloading' ? vlm.pct : pct}%` }} />
         </div>
       )}
       {!busy && vlm.state === 'downloading' && (
@@ -107,9 +111,11 @@ export function PhotoSheet({ date, onClose, onLog }: Props) {
           <i style={{ width: `${vlm.pct}%` }} />
         </div>
       )}
-      <p className="lede">
+      <p
+        className={`lede${busy && vlm.state === 'error' ? ' lede-error' : ''}`}
+      >
         {busy
-          ? status
+          ? (vlm.state === 'downloading' ? vlm.message : vlm.state === 'error' ? vlm.message : status)
           : vlm.state === 'ready'
             ? 'Snap a meal. Vision runs on this device and searches the food database.'
             : vlm.state === 'downloading'

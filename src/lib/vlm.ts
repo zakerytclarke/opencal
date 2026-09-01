@@ -40,6 +40,18 @@ let backend: VlmBackend | null = null
 
 export type VlmState = 'idle' | 'downloading' | 'ready' | 'error'
 
+/** Raised when the on-device vision model fails to load (download/runtime). Carries
+ *  the underlying message so the UI can show the real reason instead of an empty
+ *  "no foods found" result. */
+export class ModelLoadError extends Error {
+  readonly cause?: unknown
+  constructor(message: string, cause?: unknown) {
+    super(message)
+    this.name = 'ModelLoadError'
+    this.cause = cause
+  }
+}
+
 export type VlmStatus = {
   state: VlmState
   message: string
@@ -228,9 +240,9 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
     return ready
   })().catch((err: unknown) => {
     loadPromise = null
-    const message = err instanceof Error ? err.message : 'Could not load vision model'
+    const message = err instanceof Error ? err.message : 'Could not load the on-device vision model'
     setStatus({ state: 'error', message, pct: 0 })
-    throw err
+    throw err instanceof ModelLoadError ? err : new ModelLoadError(message, err)
   })
   return loadPromise
 }
@@ -318,6 +330,7 @@ export async function extractMealText(text: string, onProgress?: ProgressFn): Pr
       ms: Math.round(performance.now() - started),
     }
   } catch (err) {
+    if (err instanceof ModelLoadError) throw err
     const message = err instanceof Error ? err.message : String(err)
     return {
       raw: '',
@@ -377,6 +390,7 @@ export async function extractMealPhoto(image: Blob, onProgress?: ProgressFn): Pr
       ms: Math.round(performance.now() - started),
     }
   } catch (err) {
+    if (err instanceof ModelLoadError) throw err
     const message = err instanceof Error ? err.message : String(err)
     return {
       raw: '',
@@ -434,6 +448,7 @@ export async function estimateTextPortions(
       ms: Math.round(performance.now() - started),
     }
   } catch (err) {
+    if (err instanceof ModelLoadError) throw err
     const message = err instanceof Error ? err.message : String(err)
     return {
       raw: '',
@@ -499,6 +514,7 @@ export async function estimatePhotoPortions(
       ms: Math.round(performance.now() - started),
     }
   } catch (err) {
+    if (err instanceof ModelLoadError) throw err
     const message = err instanceof Error ? err.message : String(err)
     return {
       raw: '',

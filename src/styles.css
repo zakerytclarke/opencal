@@ -77,6 +77,7 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 .onboard-card h1, .home h1 { font-size: 30px; color: var(--hero); }
 .lede { color: var(--slate); line-height: 1.45; margin: 8px 0 20px; }
 .lede.center { text-align: center; }
+.lede-error { color: #ef4444; }
 .micro { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute); margin: 18px 0 8px; }
 
 .seg { display: flex; background: var(--surface-2); border-radius: 12px; padding: 4px; gap: 4px; margin: 16px 0; }
