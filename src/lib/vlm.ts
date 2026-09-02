@@ -158,9 +158,13 @@ type DType = 'fp16' | 'q4f16' | 'q4' | 'q8'
 
 function pickRuntime(): { device: 'webgpu' | 'wasm' | 'cpu'; dtype: Record<string, DType> } {
   if (hasWebGpu()) {
+    // Use a single, internally-consistent dtype variant for every submodule.
+    // Mixing q4f16 (with an fp32 accumulator path) alongside fp16 inners
+    // produces Add nodes with mismatched operand types and WebGPU refuses
+    // to build the session on those.
     return {
       device: 'webgpu',
-      dtype: { embed_tokens: 'fp16', decoder_model_merged: 'q4f16', vision_encoder: 'fp16' },
+      dtype: { embed_tokens: 'fp16', decoder_model_merged: 'fp16', vision_encoder: 'fp16' },
     }
   }
   if (isNode()) {
@@ -216,18 +220,50 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
     const imageProc = processor.image_processor as { do_image_splitting?: boolean } | undefined
     if (imageProc) imageProc.do_image_splitting = false
 
-    const model = await tf.AutoModelForImageTextToText.from_pretrained(VLM_ID, {
-      device,
-      dtype,
-      progress_callback: (info: { status?: string; progress?: number; file?: string }) => {
-        if (info.status === 'progress' && info.progress != null) {
-          const pct = 20 + Math.round(info.progress * 0.7)
-          const msg = local ? `Loading ${info.file ?? 'weights'}…` : `Downloading ${info.file ?? 'weights'}…`
-          setStatus({ state: 'downloading', message: msg, pct })
-          onProgress?.(msg, pct)
-        }
-      },
-    })
+    // Try each dtype set in order. The first one where WebGPU/wasm can build
+    // a Session wins. (The export mixes fp16 and fp32 nodes in places, so a
+    // single dtype variant can fail at session-open; a consistent one doesn't.)
+    let model: unknown
+    const errors: string[] = []
+    // On WebGPU, prefer the small fp16 variant first (≈3× smaller than fp32).
+    const candidates =
+      device === 'webgpu'
+        ? [
+            { embed_tokens: 'fp16', decoder_model_merged: 'fp16', vision_encoder: 'fp16' },
+            { embed_tokens: 'q4f16', decoder_model_merged: 'q4f16', vision_encoder: 'q4f16' },
+          ]
+        : [dtype]
+    for (const [i, dtypeTry] of candidates.entries()) {
+      try {
+        vlog(
+          `loadSession: attempting dtype ${JSON.stringify(dtypeTry as Record<string, DType>)} (${
+            i + 1
+          }/${candidates.length})`,
+        )
+        model = await tf.AutoModelForImageTextToText.from_pretrained(VLM_ID, {
+          device,
+          dtype: dtypeTry as Record<string, DType>,
+          progress_callback: (info: { status?: string; progress?: number; file?: string }) => {
+            if (info.status === 'progress' && info.progress != null) {
+              const pct = 20 + Math.round(info.progress * 0.7)
+              const msg = local ? `Loading ${info.file ?? 'weights'}…` : `Downloading ${info.file ?? 'weights'}…`
+              setStatus({ state: 'downloading', message: msg, pct })
+              onProgress?.(msg, pct)
+            }
+          },
+        })
+        break
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        errors.push(`dtype=${JSON.stringify(dtypeTry)}: ${message}`)
+        vlogv('loadSession: dtype attempt failed', errors.at(-1))
+      }
+    }
+    if (model === undefined) {
+      throw new ModelLoadError(
+        `Could not build an on-device session for any dtype variant:\n${errors.join('\n')}`,
+      )
+    }
 
     const ready: Session = {
       processor: processor as unknown as Session['processor'],
