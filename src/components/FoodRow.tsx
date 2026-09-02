@@ -21,7 +21,7 @@ export function FoodRow({ entry, onDelete }: Props) {
         <div className="food-sub">
           {entry.brand ? `${entry.brand} · ` : ''}
           {entry.serveLabel}
-          {' · '}P {Math.round(entry.protein)} · C {Math.round(entry.carbs)} · F {Math.round(entry.fat)}
+          {' · '}Protein {Math.round(entry.protein)} · Carbs {Math.round(entry.carbs)} · Fat {Math.round(entry.fat)}
         </div>
       </div>
       <div className="food-kcal">{Math.round(entry.kcal)}</div>

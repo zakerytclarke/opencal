@@ -62,9 +62,9 @@ export function NutritionCard(props: Props) {
         </div>
       </button>
       <div className="vbars" aria-label="Macros">
-        <VBar letter="C" value={props.carbs} goal={props.carbsGoal} tone="carbs" />
-        <VBar letter="F" value={props.fat} goal={props.fatGoal} tone="fat" />
-        <VBar letter="P" value={props.protein} goal={props.proteinGoal} tone="protein" />
+        <VBar letter="Carbs" value={props.carbs} goal={props.carbsGoal} tone="carbs" />
+        <VBar letter="Fat" value={props.fat} goal={props.fatGoal} tone="fat" />
+        <VBar letter="Protein" value={props.protein} goal={props.proteinGoal} tone="protein" />
       </div>
     </section>
   )

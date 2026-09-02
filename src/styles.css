@@ -229,6 +229,8 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
   display: grid; place-items: center; color: var(--lake); background: var(--sky);
 }
 .food-del { border: 0; background: transparent; color: var(--mute); padding: 6px; }
+.job-photo { width: 100%; height: 132px; border-radius: 18px; overflow: hidden; background: #11161c; margin-bottom: 8px; }
+.job-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .food-row.is-pending { opacity: 0.92; }
 .spinner {
   width: 18px; height: 18px; border-radius: 50%;
@@ -328,9 +330,12 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
   width: 100%; border: 1px solid var(--divider); background: var(--card);
   border-radius: 16px; padding: 16px; color: var(--hero); font-size: 18px;
 }
-.log-overlay.is-search { text-align: left; max-height: 88dvh; overflow: auto; }
+.log-overlay.is-search { text-align: left; max-height: 88dvh; display: flex; flex-direction: column; }
 .log-overlay.is-search .primary { margin-top: 0; }
-.log-suggest { margin-top: 4px; background: var(--card); border-radius: 16px; overflow: hidden; }
+.log-search { display: flex; flex-direction: column; gap: 12px; min-height: 0; flex: 1; }
+.log-search .log-suggest { overflow: auto; min-height: 0; }
+.log-search .log-compose { position: sticky; bottom: 0; background: var(--canvas); padding-top: 8px; margin-top: auto; }
+.log-suggest { background: var(--card); border-radius: 16px; overflow: hidden; }
 .suggest-label {
   padding: 10px 12px 4px; font-size: 11px; font-weight: 750; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--mute);

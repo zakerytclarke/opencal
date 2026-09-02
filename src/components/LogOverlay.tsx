@@ -154,6 +154,56 @@ export function LogOverlay({ kind, date, diary, onClose, onQueue, onQuick, onIns
 
   const showSuggest = kind === 'search' && (recentHits.length > 0 || dbHits.length > 0 || quickCal != null)
 
+  const suggest = showSuggest ? (
+    <div className="log-suggest">
+      {quickCal != null && (
+        <SuggestRow
+          emoji="⚡"
+          name={`Quick add ${quickCal}`}
+          sub="Calories only"
+          kcal={quickCal}
+          onClick={() => {
+            onQuick?.(quickCal, query)
+            onClose()
+          }}
+        />
+      )}
+      {recentHits.length > 0 && (
+        <>
+          <div className="suggest-label">{query.trim() ? 'From your log' : 'Recently logged'}</div>
+          {recentHits.map((entry) => (
+            <SuggestRow
+              key={entry.id}
+              emoji={entry.emoji}
+              name={entry.name}
+              sub={`${entry.brand ? `${entry.brand} · ` : ''}${entry.serveLabel}`}
+              kcal={entry.kcal}
+              badge="Logged"
+              sourceId={entry.foodId !== 'quick' && entry.foodId !== 'unmatched' ? entry.foodId : undefined}
+              onClick={() => pickRecent(entry)}
+            />
+          ))}
+        </>
+      )}
+      {dbHits.length > 0 && (
+        <>
+          <div className="suggest-label">Best matches</div>
+          {dbHits.map((food) => (
+            <SuggestRow
+              key={food.id}
+              emoji={food.emoji}
+              name={food.name}
+              sub={food.serveLabel}
+              kcal={Math.round(food.kcal * (food.serveG / 100))}
+              sourceId={food.id}
+              onClick={() => pickMatch(food)}
+            />
+          ))}
+        </>
+      )}
+    </div>
+  ) : null
+
   return (
     <div className={`log-overlay${kind === 'search' ? ' is-search' : ''}`} role="dialog" aria-label="Log food">
       <button type="button" className="text-btn log-close" onClick={onClose}>
@@ -176,72 +226,25 @@ export function LogOverlay({ kind, date, diary, onClose, onQueue, onQuick, onIns
       )}
 
       {kind === 'search' && (
-        <form
-          className="log-compose"
-          onSubmit={(e) => {
-            e.preventDefault()
-            submitText(query, 'search')
-          }}
-        >
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="2 eggs and a banana"
-            autoFocus
-          />
-          <button type="submit" className="primary" disabled={!query.trim()}>
-            {quickCal != null ? `Quick add ${quickCal}` : 'Log'}
-          </button>
-        </form>
-      )}
-
-      {showSuggest && (
-        <div className="log-suggest">
-          {quickCal != null && (
-            <SuggestRow
-              emoji="⚡"
-              name={`Quick add ${quickCal}`}
-              sub="Calories only"
-              kcal={quickCal}
-              onClick={() => {
-                onQuick?.(quickCal, query)
-                onClose()
-              }}
+        <div className="log-search">
+          {suggest}
+          <form
+            className="log-compose"
+            onSubmit={(e) => {
+              e.preventDefault()
+              submitText(query, 'search')
+            }}
+          >
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="2 eggs and a banana"
+              autoFocus
             />
-          )}
-          {recentHits.length > 0 && (
-            <>
-              <div className="suggest-label">{query.trim() ? 'From your log' : 'Recently logged'}</div>
-              {recentHits.map((entry) => (
-                <SuggestRow
-                  key={entry.id}
-                  emoji={entry.emoji}
-                  name={entry.name}
-                  sub={`${entry.brand ? `${entry.brand} · ` : ''}${entry.serveLabel}`}
-                  kcal={entry.kcal}
-                  badge="Logged"
-                  sourceId={entry.foodId !== 'quick' && entry.foodId !== 'unmatched' ? entry.foodId : undefined}
-                  onClick={() => pickRecent(entry)}
-                />
-              ))}
-            </>
-          )}
-          {dbHits.length > 0 && (
-            <>
-              <div className="suggest-label">Best matches</div>
-              {dbHits.map((food) => (
-                <SuggestRow
-                  key={food.id}
-                  emoji={food.emoji}
-                  name={food.name}
-                  sub={food.serveLabel}
-                  kcal={Math.round(food.kcal * (food.serveG / 100))}
-                  sourceId={food.id}
-                  onClick={() => pickMatch(food)}
-                />
-              ))}
-            </>
-          )}
+            <button type="submit" className="primary" disabled={!query.trim()}>
+              {quickCal != null ? `Quick add ${quickCal}` : 'Log'}
+            </button>
+          </form>
         </div>
       )}
 

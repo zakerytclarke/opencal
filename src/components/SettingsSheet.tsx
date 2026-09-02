@@ -51,7 +51,7 @@ export function SettingsSheet({ profile, onClose, onResetOnboarding, onDeleteLog
         <p className="settings-goal">
           <b>{profile.calorieGoal.toLocaleString()}</b> cal/day
           <span>
-            P {profile.proteinGoal} · C {profile.carbsGoal} · F {profile.fatGoal}
+            Protein {profile.proteinGoal} · Carbs {profile.carbsGoal} · Fat {profile.fatGoal}
           </span>
         </p>
       </section>

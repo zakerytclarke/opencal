@@ -26,6 +26,11 @@ export function LogJobCard({ job }: Props) {
   if (job.status === 'error' && open.length === 0) {
     return (
       <div className="food-row is-pending">
+        {job.previewUrl && (
+          <div className="job-photo">
+            <img src={job.previewUrl} alt="Meal photo" />
+          </div>
+        )}
         <div className="food-emoji" aria-hidden>
           ⚠️
         </div>
@@ -39,6 +44,11 @@ export function LogJobCard({ job }: Props) {
 
   return (
     <div className="food-batch is-live" aria-live="polite">
+      {job.previewUrl && (
+        <div className="job-photo">
+          <img src={job.previewUrl} alt="Meal photo" />
+        </div>
+      )}
       {extracting && (
         <PendingRow
           item={{
