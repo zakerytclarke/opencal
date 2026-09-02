@@ -11,8 +11,9 @@
     "db": "python3 scripts/build-food-db.py",
     "db:label": "python3 scripts/build-food-db.py --label-only",
     "test:e2e": "node scripts/e2e.mjs",
-    "test": "tsx scripts/verify-vlm-parse.ts && tsx scripts/verify-food-search.ts && tsx scripts/verify-portions.ts && tsx scripts/verify-dates.ts && tsx scripts/verify-plan.ts",
+    "test": "tsx scripts/verify-vlm-parse.ts && tsx scripts/verify-meal-name.ts && tsx scripts/verify-food-search.ts && tsx scripts/verify-portions.ts && tsx scripts/verify-dates.ts && tsx scripts/verify-plan.ts",
     "test:parse": "tsx scripts/verify-vlm-parse.ts",
+    "test:mealname": "tsx scripts/verify-meal-name.ts",
     "test:search": "tsx scripts/verify-food-search.ts",
     "ci": "npm test && tsc -b --pretty false && vite build"
   },

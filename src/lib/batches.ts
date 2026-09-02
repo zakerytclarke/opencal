@@ -9,6 +9,7 @@ export type FoodBatch = {
   raw: string
   error?: string
   ms?: number
+  mealName?: string
   at: string
 }
 
@@ -35,6 +36,7 @@ export function groupBatches(entries: LogEntry[]): FoodBatch[] {
       raw: head?.debugRaw ?? '',
       error: head?.debugError,
       ms: head?.debugMs,
+      mealName: head?.mealName,
       at: head?.loggedAt ?? '',
     }
   })

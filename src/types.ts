@@ -71,6 +71,7 @@ export type LogEntry = {
   source: 'search' | 'voice' | 'photo' | 'quick' | 'sentence'
   loggedAt: string
   batchId?: string
+  mealName?: string
   debugInput?: string
   debugRaw?: string
   debugPath?: DebugPath

@@ -54,6 +54,12 @@ export function removeEntry(diary: Diary, date: string, id: string): Diary {
   return next
 }
 
+export function removeBatch(diary: Diary, date: string, batchId: string): Diary {
+  const next = { ...diary, [date]: (diary[date] ?? []).filter((e) => e.batchId !== batchId) }
+  saveDiary(next)
+  return next
+}
+
 export function uid(): string {
   const c: Crypto | undefined = typeof crypto !== 'undefined' ? crypto : undefined
   if (c && typeof c.randomUUID === 'function') return c.randomUUID()

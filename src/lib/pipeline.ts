@@ -32,11 +32,13 @@ function stamp(entry: LogEntry, meta: {
   error?: string
   ms: number
   source: LogEntry['source']
+  mealName?: string
 }): LogEntry {
   return {
     ...entry,
     source: meta.source,
     batchId: meta.batchId,
+    mealName: meta.mealName,
     debugInput: meta.input,
     debugRaw: meta.raw || (meta.error ? `[error] ${meta.error}` : '(empty model output)'),
     debugPath: meta.path,
@@ -100,6 +102,7 @@ async function resolveItems(
   extractError: string | undefined,
   handlers: JobHandlers,
   catalog: PhotoCatalog | null = null,
+  mealName?: string,
 ): Promise<LogEntry[]> {
   const entries: LogEntry[] = []
   const n = Math.max(1, items.length)
@@ -118,6 +121,7 @@ async function resolveItems(
       error: result.error ?? extractError,
       ms: result.ms,
       source,
+      mealName,
     })
     entries.push(entry)
     handlers.onEntry?.(entry, item, i)
@@ -177,7 +181,7 @@ export async function logFromText(
   const extractRaw = [extracted.raw, portioned.raw].filter(Boolean).join('\n---\n')
   const extractError = extracted.error || portioned.error
   const extractPath = portioned.items.length ? portioned.path : extracted.path
-  return resolveItems(text, items, date, source, batchId, extractRaw, extractPath, extractError, handlers, catalog)
+  return resolveItems(text, items, date, source, batchId, extractRaw, extractPath, extractError, handlers, catalog, extracted.mealName)
 }
 
 export async function logFromPhoto(image: Blob, date: string, handlers: JobHandlers = {}): Promise<LogEntry[]> {
@@ -206,5 +210,5 @@ export async function logFromPhoto(image: Blob, date: string, handlers: JobHandl
   const extractRaw = [identified.raw, portioned.raw].filter(Boolean).join('\n---\n')
   const extractError = identified.error || portioned.error
   const extractPath = portioned.items.length ? portioned.path : identified.path
-  return resolveItems('(photo)', items, date, 'photo', batchId, extractRaw, extractPath, extractError, handlers, catalog)
+  return resolveItems('(photo)', items, date, 'photo', batchId, extractRaw, extractPath, extractError, handlers, catalog, identified.mealName)
 }

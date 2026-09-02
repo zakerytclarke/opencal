@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { LogOverlay, type LogKind, type QueuePayload } from './components/LogOverlay'
-import { addEntries, clearAllData, clearDiary, clearProfile, loadDiary, loadProfile, removeEntry, saveProfile, uid } from './lib/storage'
+import { addEntries, clearAllData, clearDiary, clearProfile, loadDiary, loadProfile, removeBatch, removeEntry, saveProfile, uid } from './lib/storage'
 import { loadFoods, quickAddEntry } from './lib/foods'
+import { cropToSquare } from './lib/crop'
 import { logFromPhoto, logFromText } from './lib/pipeline'
 import { warmupVlm } from './lib/vlm'
 import { todayKey } from './lib/dates'
@@ -107,9 +108,13 @@ export default function App() {
 
     void (async () => {
       try {
-        await (payload.kind === 'photo'
-          ? logFromPhoto(payload.file, date, handlers)
-          : logFromText(payload.text, date, payload.source, handlers))
+        if (payload.kind === 'photo') {
+          patchJob(id, (j) => ({ ...j, step: 'Cropping the photo…', pct: 12 }))
+          const square = await cropToSquare(payload.file)
+          await logFromPhoto(square, date, handlers)
+        } else {
+          await logFromText(payload.text, date, payload.source, handlers)
+        }
         patchJob(id, { status: 'done', step: 'Done', pct: 100, pending: [] })
         window.setTimeout(() => {
           setJobs((list) => {
@@ -135,6 +140,10 @@ export default function App() {
 
   function del(id: string) {
     setDiary((d) => removeEntry(d, date, id))
+  }
+
+  function delBatch(batchId: string) {
+    setDiary((d) => removeBatch(d, date, batchId))
   }
 
   function instantLog(entry: LogEntry) {
@@ -180,6 +189,7 @@ export default function App() {
           jobs={jobs}
           onDate={setDate}
           onDelete={del}
+          onDeleteBatch={delBatch}
           onVoice={() => setFlow('voice')}
           onSearch={() => setFlow('search')}
           onPhoto={() => setFlow('photo')}

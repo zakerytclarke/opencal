@@ -8,6 +8,7 @@ import {
   EXTRACT_FEWSHOT,
   EXTRACT_PREFIX,
   EXTRACT_SYSTEM,
+  PHOTO_EXTRACT_PREFIX,
   PHOTO_EXTRACT_SYSTEM,
   PHOTO_EXTRACT_USER,
   PHOTO_PORTION_SYSTEM,
@@ -17,6 +18,7 @@ import {
   extractUserPrompt,
   formatChatPrompt,
   parseExtractedFoods,
+  parsePhotoExtraction,
   parsePick,
   photoPortionUser,
   pickUserPrompt,
@@ -28,6 +30,7 @@ import {
 export type AnalyzeResult = {
   raw: string
   items: ExtractedItem[]
+  mealName?: string
   path: DebugPath
   error?: string
   ms: number
@@ -362,17 +365,18 @@ export async function extractMealPhoto(image: Blob, onProgress?: OnProgress): Pr
         },
       ],
       true,
-      EXTRACT_PREFIX,
+      PHOTO_EXTRACT_PREFIX,
     )
     const inputs = await sess.runProcessor(img, prompt)
     console.log('%c[vlm]', 'color:#0a8', 'photo identify: prompt ready (1 image + static extract system); generating ≤220 tokens')
     onProgress?.('Finding foods…', 28)
     const raw = await decodeGeneration(sess, inputs, 220)
-    const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
-    const items = parseExtractedFoods(labeled)
+    const labeled = raw.trim().startsWith('{') ? raw : `${PHOTO_EXTRACT_PREFIX}${raw}`
+    const { mealName, items } = parsePhotoExtraction(labeled)
     return {
       raw: stripSpecialTokens(labeled) || labeled,
       items,
+      mealName: items.length ? (mealName ?? undefined) : undefined,
       path: items.length ? 'vlm' : 'vlm-empty',
       ms: Math.round(performance.now() - started),
     }

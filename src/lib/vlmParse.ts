@@ -28,15 +28,18 @@ export const EXTRACT_PREFIX = '{"foods":['
 
 export const EXTRACT_FEWSHOT: ChatMessage[] = []
 
-export const PHOTO_EXTRACT_SYSTEM = `You name every edible item clearly visible in the photo.
+export const PHOTO_EXTRACT_SYSTEM = `You give the whole photo a short name and then name every edible item clearly visible.
 Reply with JSON only, never a caption:
-{"foods":[{"name":"apple","brand":null},{"name":"KIND bar","brand":"KIND"}]}
-name is a short grocery name. brand is a readable package or logo, else null.
+{"name":"Big Mac","foods":[{"name":"hamburger","brand":null},{"name":"cheese","brand":null},{"name":"lettuce","brand":null},{"name":"pickles","brand":null}]}
+name is one short phrase for the whole plate as a meal (e.g. "Big Mac", "Chicken and rice bowl"), not a single ingredient.
+Each foods entry: name is a short grocery search keyword for that specific ingredient. brand is a readable package or logo, else null.
 Do not output quantity, unit, grams, or calories. The host looks up USDA rows next, then a second step estimates portions.
-Split a mixed plate into the foods you can see (chicken, rice, broccoli, olive oil), not one generic "bowl" or "salad".
+Split a mixed plate into the ingredients you can see (chicken, rice, broccoli, olive oil); the name is the overall meal.
 Always name the dense items: meat, pasta, rice, pizza, cheese, and any oil or dressing you can see.
 Dressings, oils, and sauces count if you can see them.
 Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not invent sides that are not in the photo.`
+
+export const PHOTO_EXTRACT_PREFIX = '{"name":'
 
 export const PHOTO_EXTRACT_USER =
   'Name every food in this photo. Names and brands only. No quantity, grams, or calories. JSON only.'
@@ -236,6 +239,19 @@ export function parseExtractedFoods(text: string, fallbackText?: string): Extrac
   if (listed.length) return listed
   if (fallbackText) return extractFoods(fallbackText)
   return extractFoods(stripSpecialTokens(text))
+}
+
+export function parsePhotoExtraction(text: string): { mealName: string | null; items: ExtractedItem[] } {
+  const parsed = parseJsonLoose(text)
+  const obj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  const list = obj ? (Array.isArray(obj.foods) ? obj.foods : Array.isArray(obj.items) ? obj.items : null) : null
+  const rawName = obj ? obj.name ?? obj.meal ?? obj.title : null
+  const mealName = typeof rawName === 'string' ? (str(rawName) ?? null) : null
+  // Trust an explicit foods/items list on a JSON object — including an empty
+  // one — so a bare `{"name":"…","foods":[]}` never falls back to the regex
+  // extractor and picks up the meal-name string as a food.
+  const items = list != null ? (list.length ? parseExtractedFoods(text) : []) : parseExtractedFoods(text)
+  return { mealName, items }
 }
 
 function expandCombined(items: ExtractedItem[]): ExtractedItem[] {

@@ -214,6 +214,14 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 .food-batch { border-bottom: 1px solid var(--divider); padding-bottom: 8px; margin-bottom: 8px; }
 .food-batch:last-child { border-bottom: 0; margin-bottom: 0; }
 .food-batch.is-live { border-bottom: 1px solid var(--divider); }
+.food-batch-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 2px; }
+.food-batch-name { font-weight: 750; font-size: 13px; color: var(--hero); letter-spacing: -0.01em; }
+.food-batch-count { font-size: 11px; color: var(--mute); font-variant-numeric: tabular-nums; }
+.food-batch-del {
+  margin-left: auto; border: 0; background: transparent; color: var(--mute);
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; padding: 0;
+}
+.food-batch-del:hover { color: #ff6b6b; background: rgba(255, 107, 107, 0.1); }
 .food-row, .result {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 8px; border: 0; background: transparent; text-align: left;
   border-bottom: 1px solid var(--divider);

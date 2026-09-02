@@ -19,6 +19,7 @@ type Props = {
   jobs: LogJob[]
   onDate: (key: string) => void
   onDelete: (id: string) => void
+  onDeleteBatch?: (id: string) => void
   onVoice: () => void
   onSearch: () => void
   onPhoto: () => void
@@ -34,6 +35,7 @@ export function Home({
   jobs,
   onDate,
   onDelete,
+  onDeleteBatch,
   onVoice,
   onSearch,
   onPhoto,
@@ -100,7 +102,9 @@ export function Home({
         {entries.length === 0 && dayJobs.length === 0 ? (
           <p className="empty">Nothing logged yet. Search, speak, or snap a photo.</p>
         ) : (
-          batches.map((batch) => <FoodBatchCard key={batch.id} batch={batch} onDelete={onDelete} />)
+          batches.map((batch) => (
+            <FoodBatchCard key={batch.id} batch={batch} onDelete={onDelete} onDeleteBatch={onDeleteBatch} />
+          ))
         )}
       </section>
 
