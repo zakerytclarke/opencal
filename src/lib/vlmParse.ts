@@ -17,23 +17,16 @@ Reply with JSON only. No markdown, no prose.
 Format:
 {"foods":[{"name":"eggs","brand":null},{"name":"banana","brand":null}]}
 Rules:
-- One object per distinct edible item. Split combos (chicken bowl with rice → chicken, rice). Named sides stay separate (bowl with guacamole and beans → bowl, guacamole, beans).
-- name is a short grocery search keyword.
-- brand is only set if the user named one, else null.
-- Keep compound grocery names: banana pepper is not banana, turkey bacon is not bacon, egg whites are not whole eggs.
+- One object per distinct edible item. Split a combo into its parts (chicken bowl with rice → chicken, rice).
+- name is a short grocery search keyword for that specific food.
+- brand is only set if the user named a brand, else null.
 - Fruit, drinks, snacks, and cooked dishes all count. Skip plates and utensils.
-- Only foods the user named. Never copy foods from examples.
+- Only foods the user actually ate. Do not invent or reuse foods that are not in the meal.
 - Do not output quantity, unit, grams, or calories. The host looks up USDA rows next, then a second step reads the original meal and catalog and emits portions.`
 
 export const EXTRACT_PREFIX = '{"foods":['
 
-export const EXTRACT_FEWSHOT: ChatMessage[] = [
-  { role: 'user', content: 'I ate a slice of pepperoni pizza and a coke' },
-  {
-    role: 'assistant',
-    content: '{"foods":[{"name":"pepperoni pizza","brand":null},{"name":"coke","brand":null}]}',
-  },
-]
+export const EXTRACT_FEWSHOT: ChatMessage[] = []
 
 export const PHOTO_EXTRACT_SYSTEM = `You name every edible item clearly visible in the photo.
 Reply with JSON only, never a caption:

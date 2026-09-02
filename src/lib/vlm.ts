@@ -158,12 +158,13 @@ type DType = 'fp16' | 'q4f16' | 'q4' | 'q8'
 
 function pickRuntime(): { device: 'webgpu' | 'wasm' | 'cpu'; dtype: Record<string, DType> } {
   if (hasWebGpu()) {
-    // Fast path: quantized decoder + fp16 vision/embed. This is the config
-    // that was running well. (loadSession falls back to an all-fp16 variant
-    // if the session build hits a dtype-mixing error in the ONNX graph.)
+    // fp16 across every submodule. Only the decoder has a q4f16 export, so a
+    // "quantized decoder + fp16 inners" mix produces Add nodes with mismatched
+    // operand types and WebGPU refuses to build the session (verified live).
+    // fp16 is the consistent, highest-quality config that always builds.
     return {
       device: 'webgpu',
-      dtype: { embed_tokens: 'fp16', decoder_model_merged: 'q4f16', vision_encoder: 'fp16' },
+      dtype: { embed_tokens: 'fp16', decoder_model_merged: 'fp16', vision_encoder: 'fp16' },
     }
   }
   if (isNode()) {
@@ -219,16 +220,17 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
     const imageProc = processor.image_processor as { do_image_splitting?: boolean } | undefined
     if (imageProc) imageProc.do_image_splitting = false
 
-    // Try each dtype set in order; the first one where the session builds wins.
-    // Fast config first (quantized decoder = the version that was running well),
-    // all-fp16 fallback in case the ONNX graph hits a dtype-mixing error.
+    // Consistent single-dtype sets only: mixing q4f16 (decoder-only) with fp16
+    // inners makes WebGPU refuse the session. fp16 = highest quality (the
+    // decoder follows the extraction prompt correctly) and every submodule
+    // ships it; q4 = a smaller fallback if fp16 ever fails to build.
     let model: unknown
     const errors: string[] = []
     const candidates =
       device === 'webgpu'
         ? [
-            { embed_tokens: 'fp16', decoder_model_merged: 'q4f16', vision_encoder: 'fp16' },
             { embed_tokens: 'fp16', decoder_model_merged: 'fp16', vision_encoder: 'fp16' },
+            { embed_tokens: 'q4', decoder_model_merged: 'q4', vision_encoder: 'q4' },
           ]
         : [dtype]
     for (const [i, dtypeTry] of candidates.entries()) {
