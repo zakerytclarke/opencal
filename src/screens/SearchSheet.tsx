@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { extractFoods, isQuickCalorie, looksLikeSentence } from '../lib/extract'
 import { resolveExtracted, searchFoods, entryFromFood } from '../lib/foods'
+import { uid } from '../lib/storage'
 import type { ExtractedItem, Food, LogEntry } from '../types'
 
 type Props = {
@@ -49,7 +50,7 @@ export function SearchSheet({ date, initialQuery = '', listening = false, onClos
     if (!n) return
     onLog([
       {
-        id: crypto.randomUUID(),
+        id: uid(),
         date,
         foodId: 'quick',
         name: 'Quick add',

@@ -6,6 +6,7 @@ import { FoodBatchCard } from '../components/FoodBatch'
 import { LogJobCard } from '../components/LogJobCard'
 import { SettingsSheet } from '../components/SettingsSheet'
 import { NutritionCard } from '../components/NutritionCard'
+import { VlmStatusBar } from '../components/VlmStatus'
 import { groupBatches } from '../lib/batches'
 import { loggedDays, totals } from '../lib/diary'
 import { USDA_FDC, catalogCount, foodCount } from '../lib/foods'
@@ -70,6 +71,8 @@ export function Home({
       </header>
 
       <DateNav date={date} onDate={onDate} onOpenCalendar={() => setCalendar(true)} />
+
+      <VlmStatusBar />
 
       <NutritionCard
         kcal={t.kcal}

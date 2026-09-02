@@ -7,6 +7,10 @@ import type { ExtractedItem, Food } from './types'
 import type { PickDecision } from './lib/vlmParse'
 
 declare global {
+  interface ImportMetaEnv {
+    /** Build tag (git sha + timestamp) — set in vite.config.ts. */
+    VITE_OPC_BUILD?: string
+  }
   interface Window {
     __opencalVlm?: {
       getVlmStatus: () => VlmStatus
@@ -36,6 +40,12 @@ declare global {
       analyzeMealText: (text: string) => Promise<AnalyzeResult>
       analyzeMealPhoto: (image: Blob) => Promise<AnalyzeResult>
       isVlmReady: () => boolean
+    }
+    /** Toggle for on-device generation debug logging. */
+    __opencalVlmDebug?: {
+      enabled: boolean
+      verbose: boolean
+      set: (o: { enabled?: boolean; verbose?: boolean }) => void
     }
   }
 }

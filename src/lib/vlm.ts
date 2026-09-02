@@ -35,10 +35,40 @@ export const LOCAL_ONNX_ID = '/models/lfm25vl-opencal'
 /** Active transformers.js model id. Hugging Face only if no local ONNX is present. */
 export let VLM_ID = HF_VLM_ID
 
-type VlmBackend = 'http' | 'transformers'
-let backend: VlmBackend | null = null
-
 export type VlmState = 'idle' | 'downloading' | 'ready' | 'error'
+
+/**
+ * Debug logging for the on-device generation loop. On by default so the
+ * "identification" step can be inspected; flip to `false` to silence.
+ * Exposed on the window as `__opencalVlmDebug`.
+ */
+const dbg = (typeof window !== 'undefined' ? (window.__opencalVlmDebug ?? {}) : {}) as {
+  enabled?: boolean
+  verbose?: boolean
+  set?: (o: { enabled?: boolean; verbose?: boolean }) => void
+}
+let dbgEnabled = dbg.enabled !== false
+let dbgVerbose = dbg.verbose === true
+function setDbg(o: { enabled?: boolean; verbose?: boolean }) {
+  if (o.enabled !== undefined) dbgEnabled = o.enabled
+  if (o.verbose !== undefined) dbgVerbose = o.verbose
+}
+function vlog(...args: unknown[]): void {
+  if (!dbgEnabled) return
+  console.log('%c[vlm]', 'color:#0a8;color:rebeccapurple;font-weight:600', ...args)
+}
+function vlogv(...args: unknown[]): void {
+  if (!dbgEnabled || !dbgVerbose) return
+  console.log('%c[vlm:verbose]', 'color:rebeccapurple', ...args)
+}
+const trunc = (s: string, n = 800) => (s.length > n ? `${s.slice(0, n)}…(+${s.length - n})` : s)
+if (typeof window !== 'undefined') {
+  window.__opencalVlmDebug = {
+    enabled: dbgEnabled,
+    verbose: dbgVerbose,
+    set: setDbg,
+  } as unknown as typeof window.__opencalVlmDebug
+}
 
 /** Raised when the on-device vision model fails to load (download/runtime). Carries
  *  the underlying message so the UI can show the real reason instead of an empty
@@ -103,25 +133,13 @@ export function subscribeVlm(fn: (s: VlmStatus) => void): () => void {
   }
 }
 
-async function detectBackend(): Promise<VlmBackend> {
-  if (backend) return backend
-  try {
-    const r = await fetch('/vlm/health', { cache: 'no-store' })
-    if (r.ok) {
-      backend = 'http'
-      return backend
-    }
-  } catch {
-    // Dev proxy is optional; fall through to on-device ONNX.
-  }
-  backend = 'transformers'
-  return backend
-}
-
 async function resolveTransformersId(): Promise<string> {
   try {
     const r = await fetch(`${LOCAL_ONNX_ID}/config.json`, { cache: 'no-store' })
-    if (r.ok) return LOCAL_ONNX_ID
+    // Vite's dev-server SPA fallback returns 200 with text/html for any
+    // unknown path, so check the content-type rather than just r.ok.
+    const ct = (r.headers.get('content-type') ?? '').toLowerCase()
+    if (r.ok && ct.includes('json')) return LOCAL_ONNX_ID
   } catch {
     // No local ONNX bundle in public/models.
   }
@@ -161,31 +179,21 @@ async function loadSession(onProgress?: ProgressFn): Promise<Session> {
   if (session) return session
   if (loadPromise) return loadPromise
   loadPromise = (async () => {
-    const kind = await detectBackend()
-    if (kind === 'http') {
-      setStatus({ state: 'ready', message: 'Local OpenCal vision ready', pct: 100 })
-      onProgress?.('Local OpenCal vision ready', 100)
-      // Dummy session; extract/pick go through /vlm.
-      const dummy = {
-        processor: {
-          tokenizer: async () => ({ input_ids: { dims: [0] } }),
-          batch_decode: () => [''],
-        },
-        model: { generate: async () => ({ slice: () => [] }) },
-        runProcessor: async () => ({ input_ids: { dims: [0] } }),
-        loadImage: async () => null,
-      } as unknown as Session
-      session = dummy
-      return dummy
-    }
-
     setStatus({ state: 'downloading', message: 'Loading on-device vision…', pct: 4 })
     onProgress?.('Loading on-device vision…', 4)
     const tf = await import('@huggingface/transformers')
-    const env = (tf as { env?: { allowLocalModels?: boolean } }).env
-    if (env) env.allowLocalModels = true
     VLM_ID = await resolveTransformersId()
     const local = VLM_ID.startsWith('/')
+    const env = (tf as { env?: { allowLocalModels?: boolean } }).env
+    if (env) {
+      // Only enable local-model loading when we actually resolved a local
+      // path. Setting it for a Hub id like 'opencal/opencal-base' makes
+      // transformers.js treat the id as a relative local path
+      // ('/models/opencal/opencal-base/…'); the Vite/dev-server SPA
+      // fallback then returns index.html (200 + HTML) for those URLs and
+      // JSON.parse("<!doctype…" throws the "not valid JSON" error.
+      if (local) env.allowLocalModels = true
+    }
     const { device, dtype } = pickRuntime()
     const preparing = local
       ? 'Loading local OpenCal weights…'
@@ -260,20 +268,37 @@ async function decodeGeneration(
   sess: Session,
   inputs: { input_ids: TensorLike } & Record<string, unknown>,
   maxNewTokens: number,
+  tag = '?',
 ): Promise<string> {
   const run = generateLock.then(async () => {
+    const prefill = inputs.input_ids.dims.at(-1) ?? 0
+    vlogv(`${tag} — generate() start`, {
+      model: VLM_ID,
+      prefillTokens: prefill,
+      maxNewTokens,
+      extraInputs: Object.keys(inputs).filter((k) => k !== 'input_ids'),
+    })
+    const t0 = performance.now()
     const outputs = await sess.model.generate({
       ...inputs,
       max_new_tokens: maxNewTokens,
       do_sample: false,
       repetition_penalty: 1.05,
     })
-    const start = inputs.input_ids.dims.at(-1) ?? 0
-    const decoded = sess.processor.batch_decode(
-      (outputs as { slice: (a: null, range: [number | null, null]) => unknown }).slice(null, [start, null]),
-      { skip_special_tokens: false },
-    )[0]
-    return String(decoded ?? '').trim()
+    const genMs = Math.round(performance.now() - t0)
+    const out = outputs as { dims?: number[]; slice: (a: null, range: [number | null, null]) => unknown }
+    const total = out.dims?.at(-1) ?? prefill
+    const newTokens = Math.max(0, total - prefill)
+    const decoded = String(
+      sess.processor.batch_decode(out.slice(null, [prefill, null]), { skip_special_tokens: false })[0] ?? '',
+    ).trim()
+    vlogv(`${tag} — generate() done`, {
+      newTokens,
+      genMs,
+      tokPerSec: genMs ? Math.round((newTokens / genMs) * 1000) : null,
+      output: trunc(decoded, 500),
+    })
+    return decoded
   })
   generateLock = run.then(
     () => undefined,
@@ -282,34 +307,27 @@ async function decodeGeneration(
   return run
 }
 
-async function completeText(prompt: string, maxNewTokens: number, onProgress?: ProgressFn): Promise<string> {
+async function completeText(
+  tag: string,
+  prompt: string,
+  maxNewTokens: number,
+  onProgress?: ProgressFn,
+): Promise<string> {
   const sess = await loadSession(onProgress)
+  vlog(`${tag}: prompt (${prompt.length} chars)`)
+  vlogv(`${tag}: prompt body`)
+  vlogv(trunc(prompt, 4000))
   const inputs = await sess.processor.tokenizer(prompt, { add_special_tokens: false })
-  return decodeGeneration(sess, inputs, maxNewTokens)
+  const inputTokens = inputs.input_ids.dims.at(-1) ?? 0
+  vlog(`${tag}: tokenized → ${inputTokens} input tokens, generating ≤${maxNewTokens}`)
+  const text = await decodeGeneration(sess, inputs, maxNewTokens, tag)
+  vlog(`${tag}: model returned ${text.length} chars`)
+  return text
 }
 
 export async function extractMealText(text: string, onProgress?: ProgressFn): Promise<AnalyzeResult> {
   const started = performance.now()
   try {
-    if ((await detectBackend()) === 'http') {
-      onProgress?.('Finding foods…', 18)
-      const r = await fetch('/vlm/extract-text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      })
-      const data = (await r.json()) as { raw?: string }
-      const raw = data.raw ?? ''
-      const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
-      const items = parseExtractedFoods(labeled, text)
-      setStatus({ state: 'ready', message: 'Local OpenCal vision ready', pct: 100 })
-      return {
-        raw: stripSpecialTokens(labeled) || labeled,
-        items,
-        path: items.length ? 'vlm' : 'vlm-empty',
-        ms: Math.round(performance.now() - started),
-      }
-    }
     onProgress?.('Finding foods…', 18)
     const prompt = formatChatPrompt(
       [
@@ -320,7 +338,7 @@ export async function extractMealText(text: string, onProgress?: ProgressFn): Pr
       true,
       EXTRACT_PREFIX,
     )
-    const raw = await completeText(prompt, 220, onProgress)
+    const raw = await completeText('identify', prompt, 220, onProgress)
     const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
     const items = parseExtractedFoods(labeled, text)
     return {
@@ -345,25 +363,10 @@ export async function extractMealText(text: string, onProgress?: ProgressFn): Pr
 export async function extractMealPhoto(image: Blob, onProgress?: ProgressFn): Promise<AnalyzeResult> {
   const started = performance.now()
   try {
-    if ((await detectBackend()) === 'http') {
-      onProgress?.('Reading the photo…', 16)
-      const body = new FormData()
-      body.append('image', image, 'plate.jpg')
-      const r = await fetch('/vlm/extract-photo', { method: 'POST', body })
-      const data = (await r.json()) as { raw?: string }
-      const raw = data.raw ?? ''
-      const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
-      const items = parseExtractedFoods(labeled)
-      return {
-        raw: stripSpecialTokens(labeled) || labeled,
-        items,
-        path: items.length ? 'vlm' : 'vlm-empty',
-        ms: Math.round(performance.now() - started),
-      }
-    }
     const sess = await loadSession(onProgress)
     onProgress?.('Reading the photo…', 16)
     const img = await sess.loadImage(image)
+    vlogv('photo identify: image bytes =', (image as Blob).size)
     const prompt = formatChatPrompt(
       [
         { role: 'system', content: PHOTO_EXTRACT_SYSTEM },
@@ -379,8 +382,9 @@ export async function extractMealPhoto(image: Blob, onProgress?: ProgressFn): Pr
       EXTRACT_PREFIX,
     )
     const inputs = await sess.runProcessor(img, prompt)
+    vlog('photo identify: prompt ready (1 image + static extract system); generating ≤220 tokens')
     onProgress?.('Finding foods…', 28)
-    const raw = await decodeGeneration(sess, inputs, 220)
+    const raw = await decodeGeneration(sess, inputs, 220, 'photo-identify')
     const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
     const items = parseExtractedFoods(labeled)
     return {
@@ -411,24 +415,6 @@ export async function estimateTextPortions(
   const started = performance.now()
   const user = textPortionUser(meal, names, lines)
   try {
-    if ((await detectBackend()) === 'http') {
-      onProgress?.('Matching catalog servings…', 40)
-      const r = await fetch('/vlm/portion-text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: meal, catalog: user }),
-      })
-      const data = (await r.json()) as { raw?: string }
-      const raw = data.raw ?? ''
-      const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
-      const items = parseExtractedFoods(labeled, meal)
-      return {
-        raw: stripSpecialTokens(labeled) || labeled,
-        items,
-        path: items.length ? 'vlm' : 'vlm-empty',
-        ms: Math.round(performance.now() - started),
-      }
-    }
     onProgress?.('Matching catalog servings…', 40)
     const prompt = formatChatPrompt(
       [
@@ -438,7 +424,7 @@ export async function estimateTextPortions(
       true,
       EXTRACT_PREFIX,
     )
-    const raw = await completeText(prompt, 280, onProgress)
+    const raw = await completeText('portion', prompt, 280, onProgress)
     const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
     const items = parseExtractedFoods(labeled, meal)
     return {
@@ -469,23 +455,6 @@ export async function estimatePhotoPortions(
   const started = performance.now()
   const user = photoPortionUser(names, lines)
   try {
-    if ((await detectBackend()) === 'http') {
-      onProgress?.('Estimating portions…', 40)
-      const body = new FormData()
-      body.append('image', image, 'plate.jpg')
-      body.append('catalog', user)
-      const r = await fetch('/vlm/portion-photo', { method: 'POST', body })
-      const data = (await r.json()) as { raw?: string }
-      const raw = data.raw ?? ''
-      const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
-      const items = parseExtractedFoods(labeled)
-      return {
-        raw: stripSpecialTokens(labeled) || labeled,
-        items,
-        path: items.length ? 'vlm' : 'vlm-empty',
-        ms: Math.round(performance.now() - started),
-      }
-    }
     const sess = await loadSession(onProgress)
     onProgress?.('Estimating portions…', 40)
     const img = await sess.loadImage(image)
@@ -504,7 +473,8 @@ export async function estimatePhotoPortions(
       EXTRACT_PREFIX,
     )
     const inputs = await sess.runProcessor(img, prompt)
-    const raw = await decodeGeneration(sess, inputs, 280)
+    vlog('photo portion: prompt ready (1 image + catalog); generating ≤280 tokens')
+    const raw = await decodeGeneration(sess, inputs, 280, 'photo-portion')
     const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
     const items = parseExtractedFoods(labeled)
     return {
@@ -534,21 +504,6 @@ export async function pickFoodMatch(
 ): Promise<{ decision: PickDecision; raw: string; ms: number; error?: string }> {
   const started = performance.now()
   try {
-    if ((await detectBackend()) === 'http') {
-      const r = await fetch('/vlm/pick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meal, item, lines }),
-      })
-      const data = (await r.json()) as { raw?: string }
-      const raw = data.raw ?? ''
-      const labeled = raw.trim().startsWith('{') ? raw : `${PICK_PREFIX}${raw}`
-      return {
-        decision: parsePick(labeled, lines.length),
-        raw: stripSpecialTokens(labeled) || labeled,
-        ms: Math.round(performance.now() - started),
-      }
-    }
     const prompt = formatChatPrompt(
       [
         { role: 'system', content: PICK_SYSTEM },
@@ -557,7 +512,7 @@ export async function pickFoodMatch(
       true,
       PICK_PREFIX,
     )
-    const raw = await completeText(prompt, 80, onProgress)
+    const raw = await completeText('pick', prompt, 80, onProgress)
     const labeled = raw.trim().startsWith('{') ? raw : `${PICK_PREFIX}${raw}`
     return {
       decision: parsePick(labeled, lines.length),

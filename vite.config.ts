@@ -1,6 +1,20 @@
+import { execSync } from 'node:child_process'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+
+const gitSha = (() => {
+  try {
+    // Best-effort commit sha for the build tag, so the console shows which build.
+    return execSync('git rev-parse --short HEAD').toString().trim()
+  } catch {
+    return 'unknown'
+  }
+})()
+
+// Expose the build tag to both dev (Vite serves import.meta.env from process.env)
+// and build (Vitest/rollup pick it up from process.env before build starts).
+process.env.VITE_OPC_BUILD = process.env.VITE_OPC_BUILD ?? `${gitSha} @ ${new Date().toISOString()}`
 
 export default defineConfig({
   base: process.env.GITHUB_PAGES === '1' ? '/opencal/' : '/',
@@ -40,21 +54,9 @@ export default defineConfig({
     host: true,
     port: 5173,
     allowedHosts: true,
-    proxy: {
-      '/vlm': {
-        target: 'http://127.0.0.1:8765',
-        changeOrigin: true,
-      },
-    },
   },
   preview: {
     host: true,
     allowedHosts: true,
-    proxy: {
-      '/vlm': {
-        target: 'http://127.0.0.1:8765',
-        changeOrigin: true,
-      },
-    },
   },
 })

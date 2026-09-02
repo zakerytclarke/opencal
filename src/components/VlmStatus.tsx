@@ -8,7 +8,7 @@ export function VlmStatusBar() {
   return (
     <div className={`vlm-bar${s.state === 'error' ? ' is-error' : ''}`}>
       <div className="vlm-bar-top">
-        <span>{s.state === 'error' ? s.message : 'Preparing photo logging on this device…'}</span>
+        <span>{s.state === 'error' ? s.message : 'Preparing the food model on this device…'}</span>
         {s.state === 'downloading' && <b>{Math.round(s.pct)}%</b>}
       </div>
       {s.state === 'downloading' && (
