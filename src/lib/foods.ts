@@ -411,8 +411,18 @@ export function candidateLines(
 export function searchForItem(item: ExtractedItem, limit = 8): Food[] {
   const q = [item.brand, item.query].filter(Boolean).join(' ')
   const hits = searchFoods(q, limit, 'all')
-  if (hits.length || !item.brand) return hits
-  return searchForItem({ ...item, brand: null }, limit)
+  if (hits.length) return hits
+  if (item.brand) {
+    const withoutBrand = searchFoods(item.query ?? '', limit, 'all')
+    if (withoutBrand.length) return withoutBrand
+  }
+  // usdaName fallback: model sometimes named the raw ingredient differently.
+  const usda = item.usdaName?.trim()
+  if (usda && usda.toLowerCase() !== (item.query ?? '').toLowerCase()) {
+    const alt = searchFoods(usda, limit, 'all')
+    if (alt.length) return alt
+  }
+  return []
 }
 
 function oilTbspGrams(food: Food): number {
@@ -612,16 +622,21 @@ export function entryFromFood(
   source: LogEntry['source'],
   date: string,
 ): LogEntry {
-  const grams = Math.max(1, Math.round(portionFor(food, item).grams))
+  const modelGrams = item.grams
+  const grams =
+    typeof modelGrams === 'number' && modelGrams > 0
+      ? Math.max(1, Math.round(modelGrams))
+      : Math.max(1, Math.round(portionFor(food, item).grams))
   const macros = scaleFood(food, grams)
   const servings = Math.round((grams / food.serveG) * 100) / 100
+  const modelEmoji = item.emoji?.trim()
   return {
     id: uid(),
     date,
     foodId: food.id,
     name: prettyFoodName(item.query || item.raw || food.name),
     brand: item.brand?.trim() || null,
-    emoji: food.emoji,
+    emoji: (modelEmoji && modelEmoji.length <= 8 ? modelEmoji : null) ?? food.emoji,
     grams,
     servings,
     serveLabel: item.unit

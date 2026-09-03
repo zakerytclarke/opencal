@@ -28,12 +28,16 @@ export const EXTRACT_PREFIX = '{"foods":['
 
 export const EXTRACT_FEWSHOT: ChatMessage[] = []
 
-export const PHOTO_EXTRACT_SYSTEM = `You give the whole photo a short name and then name every edible item clearly visible.
+export const PHOTO_EXTRACT_SYSTEM = `Name the whole photo in one short meal phrase, then describe every edible item you can see.
 Reply with JSON only, never a caption:
-{"name":"Big Mac","foods":[{"name":"hamburger","brand":null},{"name":"cheese","brand":null},{"name":"lettuce","brand":null},{"name":"pickles","brand":null}]}
+{"name":"Big Mac","foods":[{"groupedFoodName":"hamburger","usdaName":"hamburger, cooked","grams":85,"servingCount":1,"emoji":"🍔"},{"groupedFoodName":"cheese","usdaName":"cheese, american","grams":12,"servingCount":1,"emoji":"🧀"},{"groupedFoodName":"lettuce","usdaName":"lettuce, romaine","grams":10,"servingCount":1,"emoji":"🥬"},{"groupedFoodName":"pickles","usdaName":"pickles, dill","grams":8,"servingCount":3,"emoji":"🥒"}]}
 name is one short phrase for the whole plate as a meal (e.g. "Big Mac", "Chicken and rice bowl"), not a single ingredient.
-Each foods entry: name is a short grocery search keyword for that specific ingredient. brand is a readable package or logo, else null.
-Do not output quantity, unit, grams, or calories. The host looks up USDA rows next, then a second step estimates portions.
+Each foods entry has these keys:
+- groupedFoodName: a short grocery keyword for that specific ingredient.
+- usdaName: the USDA food-database keyword for the same ingredient (e.g. "oatmeal, cooked", "egg, whole").
+- grams: your best weight estimate of that ingredient on the plate, in grams (roughly 1 to 2000).
+- servingCount: how many separate pieces/servings of that ingredient you see (1, 2, 3…).
+- emoji: one single emoji icon for that ingredient (e.g. 🍔 🍚 🥬 🥑 🥒).
 Split a mixed plate into the ingredients you can see (chicken, rice, broccoli, olive oil); the name is the overall meal.
 Always name the dense items: meat, pasta, rice, pizza, cheese, and any oil or dressing you can see.
 Dressings, oils, and sauces count if you can see them.
@@ -42,7 +46,7 @@ Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not i
 export const PHOTO_EXTRACT_PREFIX = '{"name":'
 
 export const PHOTO_EXTRACT_USER =
-  'Name every food in this photo. Names and brands only. No quantity, grams, or calories. JSON only.'
+  'Name the meal, then every food in this photo. Reply with name plus foods[] containing groupedFoodName, usdaName, grams, servingCount, and emoji for each. JSON only.'
 
 export const PHOTO_PORTION_SYSTEM = `You match each visible food to a USDA catalog record, then say how many of that record's household serving are on the plate.
 The host already named the foods and looked up food-database rows. Each line is one record: food name, household serving, grams.
@@ -196,6 +200,18 @@ function num(value: unknown, fallback = 1): number {
   return Number.isFinite(n) && n > 0 ? n : fallback
 }
 
+function positiveNum(value: unknown): number | null {
+  if (value == null) return null
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function positiveInt(value: unknown): number | null {
+  if (value == null) return null
+  const n = Number(value)
+  return Number.isFinite(n) && Math.abs(n - Math.round(n)) < 0.001 && n >= 1 ? Math.round(n) : null
+}
+
 function str(value: unknown): string | null {
   if (value == null) return null
   const s = String(value).trim()
@@ -221,15 +237,33 @@ export function parseExtractedFoods(text: string, fallbackText?: string): Extrac
         continue
       }
       if (!row || typeof row !== 'object') continue
-      const r = row as { name?: string; query?: string; food?: string; brand?: string; quantity?: number; unit?: string }
-      const query = str(r.query ?? r.name ?? r.food)
+      const r = row as {
+        name?: string
+        query?: string
+        food?: string
+        groupedFoodName?: string
+        brand?: string
+        quantity?: number
+        unit?: string
+        usdaName?: string
+        grams?: number
+        servingCount?: number
+        emoji?: string
+      }
+      const query = str(r.query ?? r.groupedFoodName ?? r.name ?? r.food)
       if (!query) continue
+      const grams = positiveNum(r.grams)
+      const serving = positiveInt(r.servingCount)
       rows.push({
         raw: text,
         query,
         brand: str(r.brand),
         quantity: num(r.quantity),
         unit: str(r.unit),
+        usdaName: str(r.usdaName) ?? undefined,
+        grams: grams ?? undefined,
+        servingCount: serving ?? undefined,
+        emoji: str(r.emoji) ?? undefined,
       })
     }
     if (rows.length) return expandCombined(rows)

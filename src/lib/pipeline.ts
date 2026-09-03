@@ -10,7 +10,7 @@ import {
   type PhotoCatalog,
 } from './foods'
 import { uid } from './storage'
-import { estimatePhotoPortions, estimateTextPortions, extractMealPhoto, extractMealText } from './vlm'
+import { estimateTextPortions, extractMealPhoto, extractMealText } from './vlm'
 import type { DebugPath, ExtractedItem, Food, LogEntry } from '../types'
 
 export type JobProgress = {
@@ -200,15 +200,9 @@ export async function logFromPhoto(image: Blob, date: string, handlers: JobHandl
     return []
   }
 
-  const catalog = photoCatalog(named)
-  handlers.onProgress?.({ message: 'Looking up USDA servings…', pct: 32 })
-  const portioned = await estimatePhotoPortions(image, catalog.names, catalog.lines, (message, pct) => {
-    handlers.onProgress?.({ message, pct: pct != null ? 32 + Math.min(20, pct * 0.2) : 40 })
-  })
-  const items = portioned.items.length ? portioned.items : named
-  handlers.onExtracted?.(items)
-  const extractRaw = [identified.raw, portioned.raw].filter(Boolean).join('\n---\n')
-  const extractError = identified.error || portioned.error
-  const extractPath = portioned.items.length ? portioned.path : identified.path
-  return resolveItems('(photo)', items, date, 'photo', batchId, extractRaw, extractPath, extractError, handlers, catalog, identified.mealName)
+  // Model already emitted grams/servingCount/emoji per food — one VLM call,
+  // no second "portion" pass. USDA rows still bind via searchForItem.
+  handlers.onProgress?.({ message: 'Logging from photo…', pct: 40 })
+  handlers.onExtracted?.(named)
+  return resolveItems('(photo)', named, date, 'photo', batchId, identified.raw, identified.path, identified.error, handlers, null, identified.mealName)
 }

@@ -493,17 +493,21 @@ const rows: Row[] = [
   {
     id: 32,
     kind: 'text',
-    name: 'Photo identify names foods only; host RAG estimates portions next',
+    name: 'Photo prompt emits name + groupedFoodName + usdaName + grams + servingCount + emoji',
     input: PHOTO_EXTRACT_SYSTEM,
-    expect: 'names + brands, no quantity',
+    expect: 'rich per-food schema, single call',
     run() {
       const s = PHOTO_EXTRACT_SYSTEM
       return {
         pass:
-          /name every edible item/i.test(s) &&
-          /do not output quantity, unit, grams, or calories/i.test(s) &&
-          /second step estimates portions/i.test(s),
-        got: /do not output quantity/i.test(s) ? 'identify only' : 'still asks for quantity',
+          /"name"/.test(s) &&
+          /"foods"/.test(s) &&
+          /groupedFoodName/.test(s) &&
+          /usdaName/.test(s) &&
+          /\bgrams\b/.test(s) &&
+          /servingCount/.test(s) &&
+          /\bemoji\b/.test(s),
+        got: 'emits groupedFoodName/usdaName/grams/servingCount/emoji',
       }
     },
   },

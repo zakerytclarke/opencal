@@ -88,6 +88,14 @@ export type ExtractedItem = {
   quantity: number
   unit: string | null
   caloriesHint?: number
+  /** USDA database search keyword for this ingredient (photo extract). */
+  usdaName?: string | null
+  /** Model's weight estimate in grams (photo extract); calories scale to this. */
+  grams?: number
+  /** Model's count of "how many things" (photo extract). */
+  servingCount?: number
+  /** Model's emoji for this ingredient (photo extract). */
+  emoji?: string | null
 }
 
 export type LogJobStatus = 'queued' | 'extracting' | 'matching' | 'done' | 'error'

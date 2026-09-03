@@ -792,6 +792,39 @@ const cases: Case[] = [
       return { pass, got: pass ? 'none' : 'unexpected id' }
     },
   },
+  {
+    name: 'Model grams override beats household conversion (photo single call)',
+    run() {
+      const mapped = mapToBaseFood(item('banana', { quantity: 1, unit: 'medium' }))
+      if (!mapped) return { pass: false, got: 'unmatched' }
+      const withGrams = entryFromFood(
+        mapped.food,
+        item('banana', { quantity: 1, unit: 'medium', grams: 112, servingCount: 1, emoji: '🍌' }),
+        'photo',
+        '2026-09-01',
+      )
+      const noGrams = entryFromFood(
+        mapped.food,
+        item('banana', { quantity: 1, unit: 'medium' }),
+        'photo',
+        '2026-09-01',
+      )
+      return {
+        pass: withGrams.grams === 112 && withGrams.emoji === '🍌' && noGrams.grams !== 112,
+        got: `with-grams: ${withGrams.grams}g ${withGrams.kcal}kcal ${withGrams.emoji} · no-grams: ${noGrams.grams}g ${noGrams.kcal}kcal ${noGrams.emoji}`,
+      }
+    },
+  },
+  {
+    name: 'usdaName fallback still resolves when grouped name is ambiguous',
+    run() {
+      // "grits" is ambiguous; the model would supply usdaName as "corn grits, cooked"
+      const viaQuery = searchForItem(item('grits'), 3).map((f) => f.name).join(' · ')
+      const viaUsda = searchForItem(item('grits', { usdaName: 'corn grits, cooked' }), 3).map((f) => f.name).join(' · ')
+      const pass = /grits/i.test(viaUsda) && viaUsda.length > 0
+      return { pass, got: `query→${viaQuery || '(none)'} · usdaName→${viaUsda || '(none)'}` }
+    },
+  },
 ]
 
 const results = cases.map((c) => {

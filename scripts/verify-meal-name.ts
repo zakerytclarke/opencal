@@ -105,18 +105,21 @@ const rows: Row[] = [
   },
   {
     id: 9,
-    name: 'Photo prompt asks for a meal name plus named ingredients',
+    name: 'Photo prompt asks for a meal name plus rich ingredients (usdaName/grams/emoji)',
     input: PHOTO_EXTRACT_SYSTEM,
-    expect: 'name + foods, keywords only',
+    expect: 'name + rich foods[] keys',
     run() {
       const s = PHOTO_EXTRACT_SYSTEM
       return {
         pass:
-          /short name/i.test(s) &&
           /"name"/.test(s) &&
           /"foods"/.test(s) &&
-          /do not output quantity, unit, grams, or calories/i.test(s),
-        got: /"name"/.test(s) && /"foods"/.test(s) ? 'name + foods' : 'missing name or foods',
+          /groupedFoodName/i.test(s) &&
+          /usdaName/i.test(s) &&
+          /\bgrams\b/.test(s) &&
+          /servingCount/i.test(s) &&
+          /\bemoji\b/.test(s),
+        got: /"name"/.test(s) && /"foods"/.test(s) && /usdaName/i.test(s) ? 'name + rich foods[]' : 'missing name/foods or usdaName',
       }
     },
   },
