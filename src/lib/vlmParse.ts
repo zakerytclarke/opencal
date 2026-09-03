@@ -19,22 +19,30 @@ Output Format
 Return only a valid JSON array of objects without markdown headers or conversational text. Use the following schema for each ingredient:
 [
 {
-"grouped_food_name": "String (e.g., Breakfast Burrito)",
+"grouped_food_name": "String (the dish, e.g., Hot Dog, Breakfast Burrito)",
 "ingredient_name": "String (USDA reference name, e.g., Egg, whole, cooked, scrambled)",
-"estimated_gram_weight": "Number (integer)",
-"emoji": "String (single emoji)"
+"estimated_gram_weight": "Number (integer, grams of edible food — a real adult serving, not a speck)",
+"emoji": "String (one emoji — the same one for every row of the dish)"
 }
 ]
 
 Instructions & Constraints
 
-Input Handling: Process input provided as an image, a text description (e.g., "I ate a breakfast burrito with eggs, hashbrowns, and bacon"), or both.
+Input Handling: Process input provided as an image, a text description (e.g., "I ate a hot dog with mustard and a bun", "I ate a breakfast burrito with eggs, hashbrowns, and bacon"), or both.
 
-Identify & Group: Group individual components under their overarching dish name.
+One shared group name per dish: Every row that is a component of the same meal or dish MUST reuse the exact same grouped_food_name string (same casing, same words). A bun + frank + mustard = one "Hot Dog". An egg + cheese + bacon inside a burrito = one "Breakfast Burrito". Only use a different grouped_food_name for a genuinely separate item on the plate (a side salad next to the sandwich, a beverage, a dessert).
 
-USDA Standard Mapping: Match each component to its closest standard entry in the USDA FoodData Central database.
+USDA Standard Mapping: Set ingredient_name to the closest standard entry in the USDA FoodData Central database for that specific component, not for the dish.
 
-Weight Estimation: Estimate portion weight in grams for each ingredient based on visual cues or standard portion sizes for described meals.`
+Weight Estimation (grams of edible food, realistic adult serving): Never output 1–5 g for a main ingredient; that range is reserved for condiments, dressings, or thin spreads. Use these anchors unless visual cues clearly say otherwise:
+- whole medium fruit 100–120 g; small fruit 50–80 g
+- one egg 45–55 g; scrambled/boiled egg 50–70 g
+- one slice of bread 25–35 g; a hot-dog bun 45–65 g
+- one frankfurter or hot dog 50–70 g
+- a table scoop of condiment (mustard, ketchup, mayo, butter) 5–15 g
+- a table serving of rice or pasta 150–250 g; one slice of pizza 110–160 g
+- one scoop of ice cream 70–90 g; one scoop of peanut or almond butter 14–20 g
+- one typical protein portion (chicken fillet, steak, fish fillet) 120–200 g`
 
 export const EXTRACT_PREFIX = '['
 

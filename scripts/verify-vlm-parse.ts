@@ -491,6 +491,29 @@ const rows: Row[] = [
     },
   },
   {
+    id: 37,
+    kind: 'text',
+    name: 'Extract prompt forces one shared group name per dish and realistic adult gram weights',
+    input: EXTRACT_SYSTEM,
+    expect: 'same grouped_food_name across dish rows; never 1–5 g for mains',
+    run() {
+      const s = EXTRACT_SYSTEM
+      return {
+        pass:
+          /exact same grouped_food_name/i.test(s) &&
+          /mustard/.test(s) &&
+          /bun/.test(s) &&
+          /never output 1[–-]5 g/i.test(s) &&
+          /frankfurter|hot dog/i.test(s) &&
+          /serving /i.test(s),
+        got:
+          /exact same grouped_food_name/i.test(s) && /never output 1[–-]5 g/i.test(s)
+            ? 'shared dish name + realistic grams'
+            : 'prompt missing shared-name or gram floor',
+      }
+    },
+  },
+  {
     id: 31,
     kind: 'text',
     name: 'Pick prompt uses convert_portion and forbids calorie output',
