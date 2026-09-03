@@ -493,32 +493,24 @@ const rows: Row[] = [
   {
     id: 37,
     kind: 'text',
-    name: 'Extract prompt forces one shared group name per dish and realistic adult gram weights',
+    name: 'Extract prompt: dish + all parts = ONE group name; base included; single-digit floor',
     input: EXTRACT_SYSTEM,
-    expect: 'same grouped_food_name across dish rows; never 1–5 g for mains',
+    expect: 'one group per dish, base is a row, no single digits for mains/drink',
     run() {
       const s = EXTRACT_SYSTEM
       return {
         pass:
-          /exact same grouped_food_name/i.test(s) &&
-          /avocado toast/i.test(s) &&
-          /bread and avocado/i.test(s) &&
-          /base \+ topping = one dish/i.test(s) &&
-          /a slice of bread/i.test(s) &&
-          /at least 20 g/i.test(s) &&
-          /mashed or sliced avocado/i.test(s) &&
-          /30[–-]60 g/i.test(s) &&
-          /mustard/.test(s) &&
-          /bun/.test(s) &&
-          /frankfurter|hot dog/i.test(s) &&
-          /side salad/i.test(s),
+          /same grouped_food_name/i.test(s) &&
+          /base\/crust\/dough\/bun/i.test(s) &&
+          /each their own row/i.test(s) &&
+          /crust, bread or dough/i.test(s) &&
+          /slice of pizza 120[–-]150 g/i.test(s) &&
+          /cola 300[–-]500 g/i.test(s) &&
+          /single digits belong to a smear of condiment only/i.test(s),
         got:
-          /exact same grouped_food_name/i.test(s) &&
-          /base \+ topping = one dish/i.test(s) &&
-          /mashed or sliced avocado/i.test(s) &&
-          /at least 20 g/i.test(s)
-            ? 'shared dish name + composition + gram floors'
-            : 'prompt missing shared-name, composition, or gram floor',
+          /one group/i.test(s) && /base\/crust\/dough\/bun/i.test(s) && /single digits/i.test(s)
+            ? 'one group per dish · base is a row · no 1–5 g mains'
+            : 'prompt missing group rule, base row, or gram floor',
       }
     },
   },
