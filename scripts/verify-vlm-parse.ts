@@ -501,15 +501,24 @@ const rows: Row[] = [
       return {
         pass:
           /exact same grouped_food_name/i.test(s) &&
+          /avocado toast/i.test(s) &&
+          /bread and avocado/i.test(s) &&
+          /base \+ topping = one dish/i.test(s) &&
+          /a slice of bread/i.test(s) &&
+          /at least 20 g/i.test(s) &&
+          /mashed or sliced avocado/i.test(s) &&
+          /30[–-]60 g/i.test(s) &&
           /mustard/.test(s) &&
           /bun/.test(s) &&
-          /never output 1[–-]5 g/i.test(s) &&
           /frankfurter|hot dog/i.test(s) &&
-          /serving /i.test(s),
+          /side salad/i.test(s),
         got:
-          /exact same grouped_food_name/i.test(s) && /never output 1[–-]5 g/i.test(s)
-            ? 'shared dish name + realistic grams'
-            : 'prompt missing shared-name or gram floor',
+          /exact same grouped_food_name/i.test(s) &&
+          /base \+ topping = one dish/i.test(s) &&
+          /mashed or sliced avocado/i.test(s) &&
+          /at least 20 g/i.test(s)
+            ? 'shared dish name + composition + gram floors'
+            : 'prompt missing shared-name, composition, or gram floor',
       }
     },
   },

@@ -28,18 +28,21 @@ Return only a valid JSON array of objects without markdown headers or conversati
 
 Instructions & Constraints
 
-Input Handling: Process input provided as an image, a text description (e.g., "I ate a hot dog with mustard and a bun", "I ate a breakfast burrito with eggs, hashbrowns, and bacon"), or both.
+Input Handling: Process input provided as an image, a text description (e.g., "I ate avocado toast with an apple", "I ate a hot dog with mustard and a bun", "I ate a breakfast burrito with eggs, hashbrowns, and bacon"), or both.
 
-One shared group name per dish: Every row that is a component of the same meal or dish MUST reuse the exact same grouped_food_name string (same casing, same words). A bun + frank + mustard = one "Hot Dog". An egg + cheese + bacon inside a burrito = one "Breakfast Burrito". Only use a different grouped_food_name for a genuinely separate item on the plate (a side salad next to the sandwich, a beverage, a dessert).
+One shared group name per dish: Every row that is a component of the same meal or dish MUST reuse the exact same grouped_food_name string (same casing, same words). A bun + frank + mustard = one "Hot Dog". An egg + cheese + bacon inside a burrito = one "Breakfast Burrito". A slice of bread topped with mashed avocado = one "Avocado Toast" (rows for bread and avocado, both labelled "Avocado Toast"). Bread with turkey + cheese = one "Turkey Sandwich". Bread with peanut butter (+ jelly) = one "Peanut Butter Jelly Sandwich". Only use a different grouped_food_name for a genuinely separate item on the plate (a side salad next to the sandwich, a beverage, a dessert).
+
+Composition rule (base + topping = one dish): when a slice of bread, wrap, pita, or bun carries or is filled with a topping, the combination is ONE dish named after the topping — the base is a row inside that dish, NOT its own item. Never emit "Bread" and "Avocado" (or "Bread" and "Peanut Butter", "Bread" and "Hummus", etc.) as separate grouped_food_names when they are being eaten together; emit both as rows under "Avocado Toast" / "Peanut Butter Sandwich" / "Hummus Wrap". A standalone fruit or drink on the plate that is not part of the dish gets its own grouped_food_name (the fruit itself — "Apple", "Orange").
 
 USDA Standard Mapping: Set ingredient_name to the closest standard entry in the USDA FoodData Central database for that specific component, not for the dish.
 
-Weight Estimation (grams of edible food, realistic adult serving): Never output 1–5 g for a main ingredient; that range is reserved for condiments, dressings, or thin spreads. Use these anchors unless visual cues clearly say otherwise:
+Weight Estimation (grams of edible food, realistic adult serving): A main or topping ingredient on a dish must be at least 20 g — a whole avocado half mashed onto toast is 30–60 g, never 5–15 g. Only true table condiments (a swipe of ketchup/mustard/mayo/butter) drop to 5–15 g. Use these anchors unless visual cues clearly say otherwise:
 - whole medium fruit 100–120 g; small fruit 50–80 g
 - one egg 45–55 g; scrambled/boiled egg 50–70 g
 - one slice of bread 25–35 g; a hot-dog bun 45–65 g
 - one frankfurter or hot dog 50–70 g
 - a table scoop of condiment (mustard, ketchup, mayo, butter) 5–15 g
+- mashed or sliced avocado on a single toast serving 30–60 g; one whole avocado 150–200 g
 - a table serving of rice or pasta 150–250 g; one slice of pizza 110–160 g
 - one scoop of ice cream 70–90 g; one scoop of peanut or almond butter 14–20 g
 - one typical protein portion (chicken fillet, steak, fish fillet) 120–200 g`
