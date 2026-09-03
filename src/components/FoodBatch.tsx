@@ -5,14 +5,16 @@ type Props = {
   batch: Batch
   onDelete: (id: string) => void
   onDeleteBatch?: (id: string) => void
+  busy?: boolean
 }
 
-export function FoodBatchCard({ batch, onDelete, onDeleteBatch }: Props) {
+export function FoodBatchCard({ batch, onDelete, onDeleteBatch, busy }: Props) {
   const name = batch.mealName ?? sourceLabel(batch.source)
   const canDeleteBatch = batch.entries.length >= 2 && onDeleteBatch != null
   return (
-    <div className={`food-batch${batch.entries.length > 1 ? ' has-meal' : ''}`}>
+    <div className={`food-batch${batch.entries.length > 1 ? ' has-meal' : ''}${busy ? ' is-live' : ''}`} aria-busy={busy || undefined}>
       <div className="food-batch-head">
+        {busy && <span className={`food-batch-spin${batch.entries.length > 1 ? '' : ' is-lead'}`} aria-hidden />}
         <span className="food-batch-name">{name}</span>
         <span className="food-batch-count">{batch.entries.length} {batch.entries.length === 1 ? 'item' : 'items'}</span>
         {canDeleteBatch && (

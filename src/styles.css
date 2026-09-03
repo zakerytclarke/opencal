@@ -313,11 +313,12 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 .progress i { display: block; height: 100%; background: var(--lake); }
 .caption { color: var(--slate); font-style: italic; word-break: break-word; }
 
-.vlm-bar { margin: 16px 0 0; padding: 12px 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--divider); text-align: left; }
-.vlm-bar-top { display: flex; justify-content: space-between; gap: 12px; color: var(--slate); font-size: 13px; font-weight: 650; }
-.vlm-bar-top b { color: var(--lake); }
-.vlm-bar .progress { margin: 10px 0 0; }
-.vlm-bar.is-error { color: #fca5a5; border-color: #7f1d1d; }
+.food-batch-spin {
+  width: 13px; height: 13px; flex: 0 0 auto; border-radius: 50%;
+  border: 2px solid var(--divider); border-top-color: var(--lake);
+  animation: spin 0.7s linear infinite;
+}
+.food-batch-spin.is-lead { width: 16px; height: 16px; }
 
 .log-overlay {
   position: fixed; left: 50%; bottom: 0; transform: translateX(-50%);

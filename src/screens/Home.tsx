@@ -6,7 +6,6 @@ import { FoodBatchCard } from '../components/FoodBatch'
 import { LogJobCard } from '../components/LogJobCard'
 import { SettingsSheet } from '../components/SettingsSheet'
 import { NutritionCard } from '../components/NutritionCard'
-import { VlmStatusBar } from '../components/VlmStatus'
 import { groupBatches } from '../lib/batches'
 import { loggedDays, totals } from '../lib/diary'
 import { USDA_FDC, catalogCount, foodCount } from '../lib/foods'
@@ -50,6 +49,7 @@ export function Home({
   const t = totals(entries)
   const logged = loggedDays(diary)
   const dayJobs = jobs.filter((j) => j.date === date)
+  const activeJob = dayJobs.some((j) => j.status === 'matching')
 
   return (
     <div className="home">
@@ -73,8 +73,6 @@ export function Home({
       </header>
 
       <DateNav date={date} onDate={onDate} onOpenCalendar={() => setCalendar(true)} />
-
-      <VlmStatusBar />
 
       <NutritionCard
         kcal={t.kcal}
@@ -102,8 +100,14 @@ export function Home({
         {entries.length === 0 && dayJobs.length === 0 ? (
           <p className="empty">Nothing logged yet. Search, speak, or snap a photo.</p>
         ) : (
-          batches.map((batch) => (
-            <FoodBatchCard key={batch.id} batch={batch} onDelete={onDelete} onDeleteBatch={onDeleteBatch} />
+          batches.map((batch, i) => (
+            <FoodBatchCard
+              key={batch.id}
+              batch={batch}
+              onDelete={onDelete}
+              onDeleteBatch={onDeleteBatch}
+              busy={activeJob && i === batches.length - 1}
+            />
           ))
         )}
       </section>

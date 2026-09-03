@@ -4,7 +4,7 @@ import { addEntries, clearAllData, clearDiary, clearProfile, loadDiary, loadProf
 import { loadFoods, quickAddEntry } from './lib/foods'
 import { cropToSquare } from './lib/crop'
 import { logFromPhoto, logFromText } from './lib/pipeline'
-import { warmupVlm } from './lib/vlm'
+import { subscribeVlm, warmupVlm } from './lib/vlm'
 import { todayKey } from './lib/dates'
 import type { Diary, ExtractedItem, LogEntry, LogJob, PendingFood, Profile } from './types'
 import { Home } from './screens/Home'
@@ -32,6 +32,17 @@ export default function App() {
   useEffect(() => {
     void loadFoods().finally(() => setReady(true))
     warmupVlm()
+    return subscribeVlm((s) => {
+      if (s.state !== 'downloading') return
+      const message = `${s.message || 'Preparing the food model…'}`
+      setJobs((list) =>
+        list.map((j) =>
+          j.status === 'extracting' || j.status === 'matching'
+            ? { ...j, step: message, pct: Math.max(j.pct, Math.round(s.pct * 0.22)) }
+            : j,
+        ),
+      )
+    })
   }, [])
 
   function finishOnboarding(next: Profile) {

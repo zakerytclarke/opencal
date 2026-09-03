@@ -4,7 +4,7 @@ type Props = {
   job: LogJob
 }
 
-function PendingRow({ item, photo }: { item: PendingFood; photo?: string }) {
+function PendingRow({ item, photo, note }: { item: PendingFood; photo?: string; note?: string }) {
   const label = [item.quantity !== 1 ? item.quantity : null, item.unit, item.query].filter(Boolean).join(' ')
   return (
     <div className="food-row is-pending" aria-busy="true">
@@ -13,7 +13,7 @@ function PendingRow({ item, photo }: { item: PendingFood; photo?: string }) {
       </div>
       <div className="food-main">
         <div className="food-name">{label}</div>
-        <div className="food-sub">{item.brand ? `${item.brand} · ` : ''}Finding nutrition…</div>
+        <div className="food-sub">{item.brand ? `${item.brand} · ` : ''}{note || 'Finding nutrition…'}</div>
       </div>
     </div>
   )
@@ -42,6 +42,7 @@ export function LogJobCard({ job }: Props) {
     )
   }
 
+  const note = job.status === 'extracting' || job.status === 'matching' ? job.step : undefined
   return (
     <div className="food-batch is-live" aria-live="polite">
       {extracting && (
@@ -54,10 +55,11 @@ export function LogJobCard({ job }: Props) {
             status: 'matching',
           }}
           photo={job.previewUrl}
+          note={note}
         />
       )}
       {open.map((item) => (
-        <PendingRow key={item.id} item={item} />
+        <PendingRow key={item.id} item={item} note={note} />
       ))}
     </div>
   )
