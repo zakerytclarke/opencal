@@ -121,7 +121,7 @@ const rows: Row[] = [
     id: 9,
     name: 'Photo prompt asks for a flat snake_case array (no meal name)',
     input: PHOTO_EXTRACT_SYSTEM,
-    expect: 'grouped_food_name + ingredient_name + estimated_gram_weight + quantity + emoji',
+    expect: 'grouped_food_name + ingredient_name + estimated_gram_weight + emoji',
     run() {
       const s = PHOTO_EXTRACT_SYSTEM
       return {
@@ -129,7 +129,6 @@ const rows: Row[] = [
           /grouped_food_name/.test(s) &&
           /ingredient_name/.test(s) &&
           /estimated_gram_weight/.test(s) &&
-          /\bquantity\b/.test(s) &&
           /\bemoji\b/.test(s) &&
           !/servingCount/i.test(s) &&
           !/"name"\s*:/m.test(s.replace(/^\s*Example:\s*/m, '')),

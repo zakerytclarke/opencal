@@ -28,25 +28,32 @@ export const EXTRACT_PREFIX = '{"foods":['
 
 export const EXTRACT_FEWSHOT: ChatMessage[] = []
 
-export const PHOTO_EXTRACT_SYSTEM = `Describe every edible item you can see in the photo.
-Reply with a JSON array only. No markdown, no prose, no captions.
-Each item object has exactly these keys:
-- grouped_food_name: a short grocery keyword for that ingredient (e.g. "hamburger", "cheese").
-- ingredient_name: the USDA food-database keyword for the same ingredient (e.g. "hamburger, cooked", "cheese, american").
-- estimated_gram_weight: your best weight estimate of that ingredient on the plate, in grams (roughly 1 to 2000).
-- quantity: how many of that ingredient you see (a whole number or fraction, e.g. 1, 2, 0.5).
-- emoji: one single emoji icon for that ingredient (e.g. 🍔 🍚 🥬 🥑 🥒).
-Example:
-[{"grouped_food_name":"hamburger","ingredient_name":"hamburger, cooked","estimated_gram_weight":85,"quantity":1,"emoji":"🍔"},{"grouped_food_name":"cheese","ingredient_name":"cheese, american","estimated_gram_weight":12,"quantity":1,"emoji":"🧀"},{"grouped_food_name":"pickles","ingredient_name":"pickles, dill","estimated_gram_weight":8,"quantity":0.5,"emoji":"🥒"}]
-Split a mixed plate into the ingredients you can see (chicken, rice, broccoli, olive oil).
-Always name the dense items: meat, pasta, rice, pizza, cheese, and any oil or dressing you can see.
-Dressings, oils, and sauces count if you can see them.
-Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not invent sides that are not in the photo.`
+export const PHOTO_EXTRACT_SYSTEM = `Role & Task
+You are a precise nutrition analysis assistant. Analyze the provided image of food and extract an itemized list of ingredients mapped to USDA FoodData Central standards.
+
+Output Format
+Return only a valid JSON array of objects without markdown headers or conversational text. Use the following schema for each ingredient:
+[
+{
+"grouped_food_name": "String (e.g., Avocado Toast)",
+"ingredient_name": "String (USDA reference name, e.g., Avocado, raw)",
+"estimated_gram_weight": "Number (integer)",
+"emoji": "String (single emoji)"
+}
+]
+
+Instructions & Constraints
+
+Identify & Group: Group individual components under their overarching dish name.
+
+USDA Standard Mapping: Match each component to its closest standard entry in the USDA FoodData Central database.
+
+Weight Estimation: Estimate portion weight in grams for each ingredient.`
 
 export const PHOTO_EXTRACT_PREFIX = '['
 
 export const PHOTO_EXTRACT_USER =
-  'List every food in this photo as a JSON array. Each item has grouped_food_name, ingredient_name, estimated_gram_weight, quantity, and emoji. Array only.'
+  'Return the JSON array only. Each item has grouped_food_name, ingredient_name, estimated_gram_weight, and emoji.'
 
 export const PHOTO_PORTION_SYSTEM = `You match each visible food to a USDA catalog record, then say how many of that record's household serving are on the plate.
 The host already named the foods and looked up food-database rows. Each line is one record: food name, household serving, grams.
@@ -208,12 +215,6 @@ function positiveNum(value: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-function positiveInt(value: unknown): number | null {
-  if (value == null) return null
-  const n = Number(value)
-  return Number.isFinite(n) && Math.abs(n - Math.round(n)) < 0.001 && n >= 1 ? Math.round(n) : null
-}
-
 function str(value: unknown): string | null {
   if (value == null) return null
   const s = String(value).trim()
@@ -251,6 +252,7 @@ export function parseExtractedFoods(text: string, fallbackText?: string): Extrac
         estimated_gram_weight?: number
         servingCount?: number
         quantity?: number
+        serving_quantity?: number
         unit?: string
         brand?: string
         emoji?: string
@@ -259,8 +261,8 @@ export function parseExtractedFoods(text: string, fallbackText?: string): Extrac
       if (!query) continue
       const usda = str(r.ingredient_name ?? r.usdaName) ?? undefined
       const grams = positiveNum(r.estimated_gram_weight ?? r.grams)
-      const quantity = positiveNum(r.quantity)
-      const serving = positiveInt(r.servingCount)
+      const quantity = positiveNum(r.quantity ?? r.serving_quantity)
+      const serving = positiveNum(r.servingCount ?? r.serving_quantity ?? r.quantity)
       rows.push({
         raw: text,
         query,
