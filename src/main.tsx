@@ -7,6 +7,10 @@ import './styles.css'
 // Print a build tag first so debugging can identify which commit/timestamp is running.
 console.log(`[OpenCal] build=${import.meta.env.VITE_OPC_BUILD ?? 'n/a'}`)
 
+// Reflect the auto-incrementing version (1.0.<commit count>, see vite.config.ts) in the tab title.
+const opcVersion = import.meta.env.VITE_OPC_VERSION
+if (opcVersion) document.title = `OpenCal v${opcVersion}`
+
 // ---- DEBUG: trace every model-file fetch so a "not valid JSON" error is traceable to the
 // exact URL, HTTP status, and the first bytes returned (HTML would show right here). ----
 if (import.meta.env.VITE_OPC_BUILD && typeof globalThis.fetch === 'function') {
