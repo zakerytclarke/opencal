@@ -187,7 +187,10 @@ async function loadSession(onProgress?: OnProgress): Promise<Session> {
     setStatus({ state: 'downloading', message: 'Loading on-device vision…', pct: 4 })
     onProgress?.('Loading on-device vision…', 4)
     const tf = await import('@huggingface/transformers')
-    VLM_ID = await resolveTransformersId()
+    // Let tests/scripts force a specific Hub model without touching public/models
+    // (e.g. the base LFM used to validate prompts before shipping a fine-tune).
+    const forced = (globalThis as { OPENCAL_VLM_ID?: string }).OPENCAL_VLM_ID
+    VLM_ID = forced || (await resolveTransformersId())
     const local = VLM_ID.startsWith('/')
     const env = (tf as { env?: { allowLocalModels?: boolean } }).env
     if (env) {
@@ -395,7 +398,8 @@ export async function extractMealPhoto(image: Blob, onProgress?: OnProgress): Pr
     console.log('%c[vlm]', 'color:#0a8', 'photo identify: prompt ready (1 image + static extract system); generating ≤220 tokens')
     onProgress?.('Finding foods…', 28)
     const raw = await decodeGeneration(sess, inputs, 220)
-    const labeled = raw.trim().startsWith('{') ? raw : `${PHOTO_EXTRACT_PREFIX}${raw}`
+    const trimmedRaw = raw.trim()
+    const labeled = /^(?:\[|\{)/.test(trimmedRaw) ? raw : `${PHOTO_EXTRACT_PREFIX}${raw}`
     const { mealName, items } = parsePhotoExtraction(labeled)
     logParsed('photo-identify', items, items.length ? mealName ?? undefined : undefined)
     return {

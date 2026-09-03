@@ -28,25 +28,25 @@ export const EXTRACT_PREFIX = '{"foods":['
 
 export const EXTRACT_FEWSHOT: ChatMessage[] = []
 
-export const PHOTO_EXTRACT_SYSTEM = `Name the whole photo in one short meal phrase, then describe every edible item you can see.
-Reply with JSON only, never a caption:
-{"name":"Big Mac","foods":[{"groupedFoodName":"hamburger","usdaName":"hamburger, cooked","grams":85,"servingCount":1,"emoji":"🍔"},{"groupedFoodName":"cheese","usdaName":"cheese, american","grams":12,"servingCount":1,"emoji":"🧀"},{"groupedFoodName":"lettuce","usdaName":"lettuce, romaine","grams":10,"servingCount":1,"emoji":"🥬"},{"groupedFoodName":"pickles","usdaName":"pickles, dill","grams":8,"servingCount":3,"emoji":"🥒"}]}
-name is one short phrase for the whole plate as a meal (e.g. "Big Mac", "Chicken and rice bowl"), not a single ingredient.
-Each foods entry has these keys:
-- groupedFoodName: a short grocery keyword for that specific ingredient.
-- usdaName: the USDA food-database keyword for the same ingredient (e.g. "oatmeal, cooked", "egg, whole").
-- grams: your best weight estimate of that ingredient on the plate, in grams (roughly 1 to 2000).
-- servingCount: how many separate pieces/servings of that ingredient you see (1, 2, 3…).
+export const PHOTO_EXTRACT_SYSTEM = `Describe every edible item you can see in the photo.
+Reply with a JSON array only. No markdown, no prose, no captions.
+Each item object has exactly these keys:
+- grouped_food_name: a short grocery keyword for that ingredient (e.g. "hamburger", "cheese").
+- ingredient_name: the USDA food-database keyword for the same ingredient (e.g. "hamburger, cooked", "cheese, american").
+- estimated_gram_weight: your best weight estimate of that ingredient on the plate, in grams (roughly 1 to 2000).
+- quantity: how many of that ingredient you see (a whole number or fraction, e.g. 1, 2, 0.5).
 - emoji: one single emoji icon for that ingredient (e.g. 🍔 🍚 🥬 🥑 🥒).
-Split a mixed plate into the ingredients you can see (chicken, rice, broccoli, olive oil); the name is the overall meal.
+Example:
+[{"grouped_food_name":"hamburger","ingredient_name":"hamburger, cooked","estimated_gram_weight":85,"quantity":1,"emoji":"🍔"},{"grouped_food_name":"cheese","ingredient_name":"cheese, american","estimated_gram_weight":12,"quantity":1,"emoji":"🧀"},{"grouped_food_name":"pickles","ingredient_name":"pickles, dill","estimated_gram_weight":8,"quantity":0.5,"emoji":"🥒"}]
+Split a mixed plate into the ingredients you can see (chicken, rice, broccoli, olive oil).
 Always name the dense items: meat, pasta, rice, pizza, cheese, and any oil or dressing you can see.
 Dressings, oils, and sauces count if you can see them.
 Skip plates, utensils, flowers, lanterns, salt blocks, and backgrounds. Do not invent sides that are not in the photo.`
 
-export const PHOTO_EXTRACT_PREFIX = '{"name":'
+export const PHOTO_EXTRACT_PREFIX = '['
 
 export const PHOTO_EXTRACT_USER =
-  'Name the meal, then every food in this photo. Reply with name plus foods[] containing groupedFoodName, usdaName, grams, servingCount, and emoji for each. JSON only.'
+  'List every food in this photo as a JSON array. Each item has grouped_food_name, ingredient_name, estimated_gram_weight, quantity, and emoji. Array only.'
 
 export const PHOTO_PORTION_SYSTEM = `You match each visible food to a USDA catalog record, then say how many of that record's household serving are on the plate.
 The host already named the foods and looked up food-database rows. Each line is one record: food name, household serving, grams.
@@ -171,10 +171,12 @@ function jsonBlobs(text: string): string[] {
   if (fenced) blobs.push(fenced[1])
   const firstBrace = trimmed.indexOf('{')
   const lastBrace = trimmed.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace) blobs.push(trimmed.slice(firstBrace, lastBrace + 1))
   const firstArr = trimmed.indexOf('[')
   const lastArr = trimmed.lastIndexOf(']')
-  if (firstArr >= 0 && lastArr > firstArr) blobs.push(trimmed.slice(firstArr, lastArr + 1))
+  const isTopArray = trimmed.trimStart().startsWith('[') && firstArr >= 0 && lastArr > firstArr
+  if (isTopArray) blobs.push(trimmed.slice(firstArr, lastArr + 1))
+  if (firstBrace >= 0 && lastBrace > firstBrace) blobs.push(trimmed.slice(firstBrace, lastBrace + 1))
+  if (!isTopArray && firstArr >= 0 && lastArr > firstArr) blobs.push(trimmed.slice(firstArr, lastArr + 1))
   blobs.push(trimmed)
   return blobs
 }
@@ -242,25 +244,30 @@ export function parseExtractedFoods(text: string, fallbackText?: string): Extrac
         query?: string
         food?: string
         groupedFoodName?: string
-        brand?: string
+        grouped_food_name?: string
+        usdaName?: string
+        ingredient_name?: string
+        grams?: number
+        estimated_gram_weight?: number
+        servingCount?: number
         quantity?: number
         unit?: string
-        usdaName?: string
-        grams?: number
-        servingCount?: number
+        brand?: string
         emoji?: string
       }
-      const query = str(r.query ?? r.groupedFoodName ?? r.name ?? r.food)
+      const query = str(r.query ?? r.grouped_food_name ?? r.groupedFoodName ?? r.name ?? r.food)
       if (!query) continue
-      const grams = positiveNum(r.grams)
+      const usda = str(r.ingredient_name ?? r.usdaName) ?? undefined
+      const grams = positiveNum(r.estimated_gram_weight ?? r.grams)
+      const quantity = positiveNum(r.quantity)
       const serving = positiveInt(r.servingCount)
       rows.push({
         raw: text,
         query,
         brand: str(r.brand),
-        quantity: num(r.quantity),
+        quantity: quantity ?? 1,
         unit: str(r.unit),
-        usdaName: str(r.usdaName) ?? undefined,
+        usdaName: usda,
         grams: grams ?? undefined,
         servingCount: serving ?? undefined,
         emoji: str(r.emoji) ?? undefined,

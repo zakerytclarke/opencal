@@ -14,11 +14,58 @@ function foodsLine(items: { query: string; quantity?: number; unit?: string | nu
     .join(' · ')
 }
 
+function pass(ok: boolean, got: string): { pass: boolean; got: string } {
+  return { pass: ok, got }
+}
+
 const rows: Row[] = [
   {
     id: 1,
-    name: 'Big Mac name + 4 ingredients',
-    input: '{"name":"Big Mac","foods":[{"name":"hamburger","brand":null},{"name":"cheese","brand":null},{"name":"lettuce","brand":null},{"name":"pickles","brand":null}]}',
+    name: 'Flat array — 4 ingredients',
+    input:
+      '[{"grouped_food_name":"hamburger","ingredient_name":"hamburger, cooked","estimated_gram_weight":85,"quantity":1,"emoji":"🍔"},{"grouped_food_name":"cheese","ingredient_name":"cheese, american","estimated_gram_weight":12,"quantity":1,"emoji":"🧀"},{"grouped_food_name":"lettuce","ingredient_name":"lettuce, romaine","estimated_gram_weight":10,"quantity":1,"emoji":"🥬"},{"grouped_food_name":"pickles","ingredient_name":"pickles, dill","estimated_gram_weight":8,"quantity":1,"emoji":"🥒"}]',
+    expect: '4 items · no meal name',
+    run() {
+      const { mealName, items } = parsePhotoExtraction(this.input)
+      const got = `${mealName ?? '—'} → ${foodsLine(items)}`
+      return { pass: mealName === null && items.length === 4 && /hamburger/i.test(items[0].query), got }
+    },
+  },
+  {
+    id: 2,
+    name: 'Flat array — fractional quantity preserved',
+    input: '[{"grouped_food_name":"pickles","ingredient_name":"pickles, dill","estimated_gram_weight":8,"quantity":0.5,"emoji":"🥒"}]',
+    expect: 'quantity 0.5 · pickles',
+    run() {
+      const { items } = parsePhotoExtraction(this.input)
+      const got = `${items[0]?.quantity} ${items[0]?.query}`
+      return { pass: items.length === 1 && items[0].quantity === 0.5 && /pickle/i.test(items[0].query), got }
+    },
+  },
+  {
+    id: 3,
+    name: 'Flat array — snake_case keys map onto internal fields',
+    input: '[{"grouped_food_name":"egg","ingredient_name":"egg, whole","estimated_gram_weight":50,"quantity":2,"emoji":"🥚"}]',
+    expect: 'query/usdaName/grams/quantity/emoji all set',
+    run() {
+      const { items } = parsePhotoExtraction(this.input)
+      const it = items[0]
+      const got = `q=${it?.query} usda=${it?.usdaName} g=${it?.grams} qty=${it?.quantity} emoji=${it?.emoji}`
+      return pass(
+        it != null &&
+          it.query === 'egg' &&
+          it.usdaName === 'egg, whole' &&
+          it.grams === 50 &&
+          it.quantity === 2 &&
+          it.emoji === '🥚',
+        got,
+      )
+    },
+  },
+  {
+    id: 4,
+    name: 'Legacy {name, foods} still parses (backward compat)',
+    input: '{"name":"Big Mac","foods":[{"name":"hamburger"},{"name":"cheese"},{"name":"lettuce"},{"name":"pickles"}]}',
     expect: 'mealName "Big Mac" · 4 items',
     run() {
       const { mealName, items } = parsePhotoExtraction(this.input)
@@ -27,30 +74,8 @@ const rows: Row[] = [
     },
   },
   {
-    id: 2,
-    name: 'Named meal with a brand on one item',
-    input: '{"name":"Chipotle bowl","foods":[{"name":"chicken","brand":"Chipotle"},{"name":"rice","brand":null},{"name":"guacamole","brand":null}]}',
-    expect: 'mealName "Chipotle bowl" · Chipotle chicken',
-    run() {
-      const { mealName, items } = parsePhotoExtraction(this.input)
-      const got = `${mealName ?? '—'} → ${foodsLine(items)}`
-      return { pass: mealName === 'Chipotle bowl' && items.some((i) => i.brand === 'Chipotle'), got }
-    },
-  },
-  {
-    id: 3,
-    name: 'Foods only — no meal name, items still parse',
-    input: '{"foods":[{"name":"eggs"},{"name":"toast"}]}',
-    expect: 'mealName null · eggs · toast',
-    run() {
-      const { mealName, items } = parsePhotoExtraction(this.input)
-      const got = `${mealName ?? 'null'} → ${foodsLine(items)}`
-      return { pass: mealName === null && items.length === 2 && /egg/i.test(items[0].query), got }
-    },
-  },
-  {
-    id: 4,
-    name: 'Meal name with zero foods — dropped, not emitted',
+    id: 5,
+    name: 'Legacy {name, foods:[]} — dropped, not emitted',
     input: '{"name":"mystery plate","foods":[]}',
     expect: 'no items → mealName absent',
     run() {
@@ -60,8 +85,8 @@ const rows: Row[] = [
     },
   },
   {
-    id: 5,
-    name: 'Non-string meal name is rejected',
+    id: 6,
+    name: 'Non-string meal name is rejected (legacy)',
     input: '{"name":["Big Mac","cheese"],"foods":[{"name":"hamburger"}]}',
     expect: 'array name → ignored · 1 item',
     run() {
@@ -71,10 +96,10 @@ const rows: Row[] = [
     },
   },
   {
-    id: 6,
-    name: 'Numbered list fallback still yields items (no name)',
+    id: 7,
+    name: 'Numbered list fallback still yields items',
     input: '1. Pizza\n2. Cheese\n3. Pineapple',
-    expect: 'mealName null · Pizza · Cheese · Pineapple',
+    expect: 'mealName null · 3 items',
     run() {
       const { mealName, items } = parsePhotoExtraction(this.input)
       const got = `${mealName ?? 'null'} → ${foodsLine(items)}`
@@ -82,52 +107,41 @@ const rows: Row[] = [
     },
   },
   {
-    id: 7,
-    name: 'Meal under "meal" key instead of "name"',
-    input: '{"meal":"Oatmeal bowl","foods":[{"name":"oatmeal"},{"name":"honey"}]}',
-    expect: 'mealName "Oatmeal bowl" · 2 items',
-    run() {
-      const { mealName, items } = parsePhotoExtraction(this.input)
-      const got = `${mealName ?? '—'} → ${foodsLine(items)}`
-      return { pass: mealName === 'Oatmeal bowl' && items.length === 2, got }
-    },
-  },
-  {
     id: 8,
-    name: 'Trailing token noise after JSON',
-    input: '{"name":"Lunch","foods":[{"name":"salad"}]} (done)',
-    expect: 'mealName "Lunch" · salad',
+    name: 'Trailing token noise after JSON array',
+    input: '[{"grouped_food_name":"salad","ingredient_name":"salad","estimated_gram_weight":40,"quantity":1,"emoji":"🥗"}] (done)',
+    expect: 'salad · 1 item',
     run() {
-      const { mealName, items } = parsePhotoExtraction(this.input)
-      const got = `${mealName ?? '—'} → ${foodsLine(items)}`
-      return { pass: mealName === 'Lunch' && items.length === 1 && /salad/i.test(items[0].query), got }
+      const { items } = parsePhotoExtraction(this.input)
+      const got = foodsLine(items)
+      return { pass: items.length === 1 && /salad/i.test(items[0].query), got }
     },
   },
   {
     id: 9,
-    name: 'Photo prompt asks for a meal name plus rich ingredients (usdaName/grams/emoji)',
+    name: 'Photo prompt asks for a flat snake_case array (no meal name)',
     input: PHOTO_EXTRACT_SYSTEM,
-    expect: 'name + rich foods[] keys',
+    expect: 'grouped_food_name + ingredient_name + estimated_gram_weight + quantity + emoji',
     run() {
       const s = PHOTO_EXTRACT_SYSTEM
       return {
         pass:
-          /"name"/.test(s) &&
-          /"foods"/.test(s) &&
-          /groupedFoodName/i.test(s) &&
-          /usdaName/i.test(s) &&
-          /\bgrams\b/.test(s) &&
-          /servingCount/i.test(s) &&
-          /\bemoji\b/.test(s),
-        got: /"name"/.test(s) && /"foods"/.test(s) && /usdaName/i.test(s) ? 'name + rich foods[]' : 'missing name/foods or usdaName',
+          /grouped_food_name/.test(s) &&
+          /ingredient_name/.test(s) &&
+          /estimated_gram_weight/.test(s) &&
+          /\bquantity\b/.test(s) &&
+          /\bemoji\b/.test(s) &&
+          !/servingCount/i.test(s) &&
+          !/"name"\s*:/m.test(s.replace(/^\s*Example:\s*/m, '')),
+        got: /grouped_food_name/.test(s) && /estimated_gram_weight/.test(s) ? 'flat snake_case array' : 'prompt missing new keys',
       }
     },
   },
 ]
 
 const results = rows.map((row) => {
-  const { pass, got } = row.run()
-  return { ...row, pass, got }
+  const { pass: ok, got } = row.run()
+  return { ...row, pass: ok, got }
 })
 
 const failed = results.filter((r) => !r.pass).length

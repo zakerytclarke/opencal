@@ -30,6 +30,30 @@ const rows: Row[] = [
     },
   },
   {
+    id: 36,
+    kind: 'image',
+    name: 'Flat photo array parses with snake_case keys (no wrapper)',
+    input:
+      '[{"grouped_food_name":"egg","ingredient_name":"egg, whole","estimated_gram_weight":50,"quantity":2,"emoji":"🥚"},{"grouped_food_name":"banana","ingredient_name":"banana, raw","estimated_gram_weight":118,"quantity":1,"emoji":"🍌"}]',
+    expect: 'egg · banana · grams + quantity carried',
+    run() {
+      const items = parseExtractedFoods(this.input)
+      const got = foodsLine(items)
+      return {
+        pass:
+          items.length === 2 &&
+          /egg/i.test(items[0].query) &&
+          items[0].grams === 50 &&
+          items[0].quantity === 2 &&
+          items[0].emoji === '🥚' &&
+          items[0].usdaName === 'egg, whole' &&
+          /banana/i.test(items[1].query) &&
+          items[1].grams === 118,
+        got,
+      }
+    },
+  },
+  {
     id: 2,
     kind: 'text',
     name: 'Split chicken bowl combo',
@@ -493,21 +517,22 @@ const rows: Row[] = [
   {
     id: 32,
     kind: 'text',
-    name: 'Photo prompt emits name + groupedFoodName + usdaName + grams + servingCount + emoji',
+    name: 'Photo prompt emits flat snake_case array (ingredient_name/weight/quantity/emoji)',
     input: PHOTO_EXTRACT_SYSTEM,
-    expect: 'rich per-food schema, single call',
+    expect: 'flat array, no wrapper object',
     run() {
       const s = PHOTO_EXTRACT_SYSTEM
       return {
         pass:
-          /"name"/.test(s) &&
-          /"foods"/.test(s) &&
-          /groupedFoodName/.test(s) &&
-          /usdaName/.test(s) &&
-          /\bgrams\b/.test(s) &&
-          /servingCount/.test(s) &&
-          /\bemoji\b/.test(s),
-        got: 'emits groupedFoodName/usdaName/grams/servingCount/emoji',
+          /grouped_food_name/.test(s) &&
+          /ingredient_name/.test(s) &&
+          /estimated_gram_weight/.test(s) &&
+          /\bquantity\b/.test(s) &&
+          /\bemoji\b/.test(s) &&
+          !/servingCount/i.test(s) &&
+          !/"name":/.test(s) &&
+          !/"foods":/.test(s),
+        got: 'flat snake_case array, no name/foods/servingCount',
       }
     },
   },
