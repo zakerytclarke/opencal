@@ -12,31 +12,15 @@ export type PickDecision = {
   quantity: number
 }
 
-export const EXTRACT_SYSTEM = `You name every food and drink in a meal so the host can search the food database.
-Reply with JSON only. No markdown, no prose.
-Format:
-{"foods":[{"name":"eggs","brand":null},{"name":"banana","brand":null}]}
-Rules:
-- One object per distinct edible item. Split a combo into its parts (chicken bowl with rice → chicken, rice).
-- name is a short grocery search keyword for that specific food.
-- brand is only set if the user named a brand, else null.
-- Fruit, drinks, snacks, and cooked dishes all count. Skip plates and utensils.
-- Only foods the user actually ate. Do not invent or reuse foods that are not in the meal.
-- Do not output quantity, unit, grams, or calories. The host looks up USDA rows next, then a second step reads the original meal and catalog and emits portions.`
-
-export const EXTRACT_PREFIX = '{"foods":['
-
-export const EXTRACT_FEWSHOT: ChatMessage[] = []
-
-export const PHOTO_EXTRACT_SYSTEM = `Role & Task
-You are a precise nutrition analysis assistant. Analyze the provided image of food and extract an itemized list of ingredients mapped to USDA FoodData Central standards.
+export const EXTRACT_SYSTEM = `Role & Task
+You are a precise nutrition analysis assistant. Analyze the provided image or text description of food and extract an itemized list of ingredients mapped to USDA FoodData Central standards.
 
 Output Format
 Return only a valid JSON array of objects without markdown headers or conversational text. Use the following schema for each ingredient:
 [
 {
-"grouped_food_name": "String (e.g., Avocado Toast)",
-"ingredient_name": "String (USDA reference name, e.g., Avocado, raw)",
+"grouped_food_name": "String (e.g., Breakfast Burrito)",
+"ingredient_name": "String (USDA reference name, e.g., Egg, whole, cooked, scrambled)",
 "estimated_gram_weight": "Number (integer)",
 "emoji": "String (single emoji)"
 }
@@ -44,16 +28,22 @@ Return only a valid JSON array of objects without markdown headers or conversati
 
 Instructions & Constraints
 
+Input Handling: Process input provided as an image, a text description (e.g., "I ate a breakfast burrito with eggs, hashbrowns, and bacon"), or both.
+
 Identify & Group: Group individual components under their overarching dish name.
 
 USDA Standard Mapping: Match each component to its closest standard entry in the USDA FoodData Central database.
 
-Weight Estimation: Estimate portion weight in grams for each ingredient.`
+Weight Estimation: Estimate portion weight in grams for each ingredient based on visual cues or standard portion sizes for described meals.`
 
-export const PHOTO_EXTRACT_PREFIX = '['
+export const EXTRACT_PREFIX = '['
 
-export const PHOTO_EXTRACT_USER =
+export const EXTRACT_USER_TAIL =
   'Return the JSON array only. Each item has grouped_food_name, ingredient_name, estimated_gram_weight, and emoji.'
+
+export const PHOTO_EXTRACT_SYSTEM = EXTRACT_SYSTEM
+export const PHOTO_EXTRACT_PREFIX = EXTRACT_PREFIX
+export const PHOTO_EXTRACT_USER = EXTRACT_USER_TAIL
 
 export const PHOTO_PORTION_SYSTEM = `You match each visible food to a USDA catalog record, then say how many of that record's household serving are on the plate.
 The host already named the foods and looked up food-database rows. Each line is one record: food name, household serving, grams.
@@ -107,10 +97,6 @@ export const PICK_PREFIX = '{"pick":'
 export const PICK_NONE_LINE = 'N. None. no matching USDA row'
 export const PICK_USER_TAIL =
   'Pick the letter of the same food. If none of the hits is that food, pick null. Do not invent a USDA row. Do not output grams or calories.'
-
-export function extractUserPrompt(meal: string): string {
-  return `Name every food in this meal. Names and brands only. No quantity, grams, or calories. JSON only.\n${meal}`
-}
 
 export function photoPortionUser(names: string[], lines: string[]): string {
   const visible = names.filter(Boolean).join(', ') || 'see photo'

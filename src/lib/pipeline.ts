@@ -10,7 +10,7 @@ import {
   type PhotoCatalog,
 } from './foods'
 import { uid } from './storage'
-import { estimateTextPortions, extractMealPhoto, extractMealText } from './vlm'
+import { extractMealPhoto, extractMealText } from './vlm'
 import type { DebugPath, ExtractedItem, Food, LogEntry } from '../types'
 
 export type JobProgress = {
@@ -172,16 +172,11 @@ export async function logFromText(
   }
 
   const catalog = photoCatalog(named)
-  handlers.onProgress?.({ message: 'Looking up USDA servings…', pct: 32 })
-  const portioned = await estimateTextPortions(text, catalog.names, catalog.lines, (message, pct) => {
-    handlers.onProgress?.({ message, pct: pct != null ? 32 + Math.min(20, pct * 0.2) : 40 })
-  })
-  const items = portioned.items.length ? portioned.items : refineExtracted(named, text)
+  handlers.onProgress?.({ message: 'Logging meal…', pct: 40 })
+  const refined = refineExtracted(named, text)
+  const items = refined.length ? refined : named
   handlers.onExtracted?.(items)
-  const extractRaw = [extracted.raw, portioned.raw].filter(Boolean).join('\n---\n')
-  const extractError = extracted.error || portioned.error
-  const extractPath = portioned.items.length ? portioned.path : extracted.path
-  return resolveItems(text, items, date, source, batchId, extractRaw, extractPath, extractError, handlers, catalog, extracted.mealName)
+  return resolveItems(text, items, date, source, batchId, extracted.raw, extracted.path, extracted.error, handlers, catalog, extracted.mealName)
 }
 
 export async function logFromPhoto(image: Blob, date: string, handlers: JobHandlers = {}): Promise<LogEntry[]> {

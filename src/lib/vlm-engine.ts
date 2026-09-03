@@ -5,17 +5,13 @@
 import { extractFoods } from './extract'
 import type { DebugPath, ExtractedItem } from '../types'
 import {
-  EXTRACT_FEWSHOT,
   EXTRACT_PREFIX,
   EXTRACT_SYSTEM,
-  PHOTO_EXTRACT_PREFIX,
-  PHOTO_EXTRACT_SYSTEM,
-  PHOTO_EXTRACT_USER,
+  EXTRACT_USER_TAIL,
   PHOTO_PORTION_SYSTEM,
   PICK_PREFIX,
   PICK_SYSTEM,
   TEXT_PORTION_SYSTEM,
-  extractUserPrompt,
   formatChatPrompt,
   parseExtractedFoods,
   parsePhotoExtraction,
@@ -336,72 +332,43 @@ async function completeText(
   return text
 }
 
-export async function extractMealText(text: string, onProgress?: OnProgress): Promise<AnalyzeResult> {
+async function runExtract(
+  tag: string,
+  opts: { text?: string; image?: Blob; onProgress?: OnProgress },
+  useImage: boolean,
+): Promise<AnalyzeResult> {
   const started = performance.now()
   try {
-    onProgress?.('Finding foods…', 18)
+    const sess = await loadSession(opts.onProgress)
+    const userText = opts.text ? `${opts.text}\n${EXTRACT_USER_TAIL}` : EXTRACT_USER_TAIL
     const prompt = formatChatPrompt(
       [
         { role: 'system', content: EXTRACT_SYSTEM },
-        ...EXTRACT_FEWSHOT,
-        { role: 'user', content: extractUserPrompt(text) },
+        {
+          role: 'user',
+          content: useImage
+            ? [{ type: 'image' }, { type: 'text', text: userText }]
+            : userText,
+        },
       ],
       true,
       EXTRACT_PREFIX,
     )
-    const raw = await completeText('identify', prompt, 220, onProgress)
-    const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
-    const items = parseExtractedFoods(labeled, text)
-    logParsed('identify', items)
-    return {
-      raw: stripSpecialTokens(labeled) || labeled,
-      items,
-      path: items.length ? 'vlm' : 'vlm-empty',
-      ms: Math.round(performance.now() - started),
+    let raw: string
+    if (useImage) {
+      const img = await sess.loadImage(opts.image as Blob)
+      console.log('%c[vlm]', 'color:#0a8', `${tag}: prompt ready (1 image + extract system); generating ≤220 tokens`)
+      opts.onProgress?.('Finding foods…', 28)
+      const inputs = await sess.runProcessor(img, prompt)
+      raw = await decodeGeneration(sess, inputs, 220)
+    } else {
+      opts.onProgress?.('Finding foods…', 18)
+      raw = await completeText(tag, prompt, 220, opts.onProgress)
     }
-  } catch (err) {
-    if (err instanceof ModelLoadError) throw err
-    const message = err instanceof Error ? err.message : String(err)
-    return {
-      raw: '',
-      items: extractFoods(text),
-      path: 'error-fallback',
-      error: message,
-      ms: Math.round(performance.now() - started),
-    }
-  }
-}
-
-export async function extractMealPhoto(image: Blob, onProgress?: OnProgress): Promise<AnalyzeResult> {
-  const started = performance.now()
-  try {
-    const sess = await loadSession(onProgress)
-    onProgress?.('Reading the photo…', 16)
-    const img = await sess.loadImage(image)
-    console.log('%c[vlm:verbose]', 'color:rebeccapurple', 'photo identify: image bytes =', (image as Blob).size)
-    console.log('%c[vlm:photo] INPUT (user text)', 'color:#08f', PHOTO_EXTRACT_USER)
-    const prompt = formatChatPrompt(
-      [
-        { role: 'system', content: PHOTO_EXTRACT_SYSTEM },
-        {
-          role: 'user',
-          content: [
-            { type: 'image' },
-            { type: 'text', text: PHOTO_EXTRACT_USER },
-          ],
-        },
-      ],
-      true,
-      PHOTO_EXTRACT_PREFIX,
-    )
-    const inputs = await sess.runProcessor(img, prompt)
-    console.log('%c[vlm]', 'color:#0a8', 'photo identify: prompt ready (1 image + static extract system); generating ≤220 tokens')
-    onProgress?.('Finding foods…', 28)
-    const raw = await decodeGeneration(sess, inputs, 220)
     const trimmedRaw = raw.trim()
-    const labeled = /^(?:\[|\{)/.test(trimmedRaw) ? raw : `${PHOTO_EXTRACT_PREFIX}${raw}`
+    const labeled = /^(?:\[|\{)/.test(trimmedRaw) ? raw : `${EXTRACT_PREFIX}${raw}`
     const { mealName, items } = parsePhotoExtraction(labeled)
-    logParsed('photo-identify', items, items.length ? mealName ?? undefined : undefined)
+    logParsed(tag, items, items.length ? mealName ?? undefined : undefined)
     return {
       raw: stripSpecialTokens(labeled) || labeled,
       items,
@@ -414,12 +381,20 @@ export async function extractMealPhoto(image: Blob, onProgress?: OnProgress): Pr
     const message = err instanceof Error ? err.message : String(err)
     return {
       raw: '',
-      items: [],
+      items: useImage ? [] : extractFoods(opts.text ?? ''),
       path: 'error-fallback',
       error: message,
       ms: Math.round(performance.now() - started),
     }
   }
+}
+
+export async function extractMealText(text: string, onProgress?: OnProgress): Promise<AnalyzeResult> {
+  return runExtract('identify', { text, onProgress }, false)
+}
+
+export async function extractMealPhoto(image: Blob, onProgress?: OnProgress): Promise<AnalyzeResult> {
+  return runExtract('photo-identify', { image, onProgress }, true)
 }
 
 export async function estimateTextPortions(

@@ -473,18 +473,20 @@ const rows: Row[] = [
   {
     id: 30,
     kind: 'text',
-    name: 'Extract prompt is keywords only; portions come after RAG',
+    name: 'Extract prompt accepts image, text, or both and emits a flat snake_case array',
     input: EXTRACT_SYSTEM,
-    expect: 'names + brands, no quantity',
+    expect: 'grouped_food_name + ingredient_name + estimated_gram_weight + emoji; no wrapper object',
     run() {
       const s = EXTRACT_SYSTEM
       return {
         pass:
-          /search the food database/i.test(s) &&
-          /do not output quantity, unit, grams, or calories/i.test(s) &&
-          /second step reads the original meal/i.test(s) &&
-          !/"quantity"/.test(s),
-        got: /do not output quantity/i.test(s) ? 'identify only' : 'still asks for quantity',
+          /grouped_food_name/.test(s) &&
+          /ingredient_name/.test(s) &&
+          /estimated_gram_weight/.test(s) &&
+          /\bemoji\b/.test(s) &&
+          /image or text description/i.test(s) &&
+          !/"foods"\s*:/.test(s),
+        got: /grouped_food_name/.test(s) && /estimated_gram_weight/.test(s) ? 'unified flat array, image or text' : 'prompt missing keys or input modes',
       }
     },
   },
