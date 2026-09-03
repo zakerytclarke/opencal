@@ -1,0 +1,37 @@
+name: E2E 10x10
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Run 10 user photos + 10 N5k through logFromPhoto
+        run: npm run eval:e2e:10
+      - name: Post results
+        if: always()
+        run: |
+          set -e
+          if [ -f evals/results/e2e-10x10.md ]; then
+            cp evals/results/e2e-10x10.md "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## E2E 10x10" >>"$GITHUB_STEP_SUMMARY"
+            echo "No results file produced — check job logs." >>"$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload per-case JSON artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-10x10
+          path: evals/results/e2e-10x10.json
+          if-no-files-found: ignore
