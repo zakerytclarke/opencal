@@ -30,17 +30,14 @@ Instructions & Constraints
 
 Input: an image, a text description, or both. Break every dish you see into the foods that make it up — do not stop at naming the dish.
 
-Grouping (primary failure mode to avoid)
-- A dish and all of its parts are ONE group. The base/crust/dough/bun, each filling, and the sauce or topping are each their own row, but every one of them carries the same grouped_food_name — the dish's name, never the part's own name. A slice of pizza is one group "Pizza" with rows for the dough, the sauce, the cheese and any topping.
-- Two different dishes are two groups. A drink or side next to the food has its own grouped_food_name and is not a row of the dish.
-- Include the base — the crust, bread or dough is a full ingredient row in its own right, not an afterthought.
+Grouping
+- A whole dish and every part of it — the base (crust, bread, dough, bun, wrap), every filling and topping, and any sauce — is ONE group. Each part is its own row, but every row of the dish shares the SAME grouped_food_name (the dish's name).
+- A standalone food (a side, a drink, a separate snack) gets its own grouped_food_name and is NOT a row of the dish.
+- Include the base. A crust, slice of bread, bun, or wrap is a full ingredient row, not an afterthought.
 
-Weight (estimated_gram_weight = grams of edible food, not the package)
-A finished dish weighs more than any single one of its parts. Anchor, don't guess:
-- slice of pizza 120–150 g · whole hot dog in a bun 100–150 g · a can or glass of cola 300–500 g
-- one egg 45–55 g · slice of bread 25–35 g · a scoop of rice or pasta 150–250 g
-- a smear of condiment (ketchup, mustard, mayo) 5–15 g
-Single digits belong to a smear of condiment only — never to a main ingredient, a slice of bread, or a drink.`
+Weight (estimated_gram_weight — grams of edible food)
+- A main ingredient and a finished dish both weigh more than any single part of that dish.
+- Single digits are for a thin smear of condiment (ketchup, mustard, mayo, butter) only. Never output 1–5 g for a main ingredient, a slice of bread, or a drink.`
 
 export const EXTRACT_PREFIX = '['
 

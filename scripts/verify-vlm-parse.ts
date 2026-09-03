@@ -493,24 +493,29 @@ const rows: Row[] = [
   {
     id: 37,
     kind: 'text',
-    name: 'Extract prompt: dish + all parts = ONE group name; base included; single-digit floor',
+    name: 'Extract prompt: one shared group name per dish, base is a row, single digits = condiment',
     input: EXTRACT_SYSTEM,
-    expect: 'one group per dish, base is a row, no single digits for mains/drink',
+    expect: 'principles only — no anchors, no named dish list',
     run() {
       const s = EXTRACT_SYSTEM
+      const principleOk =
+        /same grouped_food_name/i.test(s) &&
+        /one group/i.test(s) &&
+        /base is a full ingredient row|full ingredient row/i.test(s) &&
+        /standalone/i.test(s) &&
+        /thin smear of condiment/i.test(s) &&
+        /1[–-]5 g/i.test(s)
+      const noAnchors =
+        !/slice of pizza \d+[–-]\d+ g/i.test(s) &&
+        !/\bcola\s+\d+[–-]\d+ g/i.test(s) &&
+        !/\bhot dog in a bun\s+\d+[–-]\d+ g/i.test(s) &&
+        !/\begg\s+\d+[–-]\d+ g/i.test(s) &&
+        !/\bscoop of rice\s+\d+[–-]\d+ g/i.test(s) &&
+        !/mashed or sliced avocado.*\d+[–-]\d+ g/i.test(s) &&
+        !/peanut or almond butter.*\d+[–-]\d+ g/i.test(s)
       return {
-        pass:
-          /same grouped_food_name/i.test(s) &&
-          /base\/crust\/dough\/bun/i.test(s) &&
-          /each their own row/i.test(s) &&
-          /crust, bread or dough/i.test(s) &&
-          /slice of pizza 120[–-]150 g/i.test(s) &&
-          /cola 300[–-]500 g/i.test(s) &&
-          /single digits belong to a smear of condiment only/i.test(s),
-        got:
-          /one group/i.test(s) && /base\/crust\/dough\/bun/i.test(s) && /single digits/i.test(s)
-            ? 'one group per dish · base is a row · no 1–5 g mains'
-            : 'prompt missing group rule, base row, or gram floor',
+        pass: principleOk && noAnchors,
+        got: principleOk ? (noAnchors ? 'principles, no anchors' : 'anchored prompt (remove)') : 'missing a principle',
       }
     },
   },

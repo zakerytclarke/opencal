@@ -409,18 +409,27 @@ export function candidateLines(
 }
 
 export function searchForItem(item: ExtractedItem, limit = 8): Food[] {
-  const q = [item.brand, item.query].filter(Boolean).join(' ')
-  const hits = searchFoods(q, limit, 'all')
-  if (hits.length) return hits
-  if (item.brand) {
-    const withoutBrand = searchFoods(item.query ?? '', limit, 'all')
-    if (withoutBrand.length) return withoutBrand
+  // The model emits two names per row: a dish/group name (item.query) and
+  // the specific ingredient that row is for (item.usdaName). We want the
+  // ingredient — that's what this row is. Fall back to the dish name only
+  // if the ingredient itself finds no catalog match.
+  const usda = item.usdaName?.trim() ?? ''
+  const query = item.query?.trim() ?? ''
+  const brand = item.brand?.trim() ?? ''
+  const uniq: string[] = []
+  const add = (t: string) => {
+    if (!t) return
+    if (!uniq.includes(t)) uniq.push(t)
   }
-  // usdaName fallback: model sometimes named the raw ingredient differently.
-  const usda = item.usdaName?.trim()
-  if (usda && usda.toLowerCase() !== (item.query ?? '').toLowerCase()) {
-    const alt = searchFoods(usda, limit, 'all')
-    if (alt.length) return alt
+  for (const base of [usda, query]) {
+    if (base) {
+      if (brand) add(`${brand} ${base}`)
+      add(base)
+    }
+  }
+  for (const t of uniq) {
+    const hits = searchFoods(t, limit, 'all')
+    if (hits.length) return hits
   }
   return []
 }
