@@ -42,6 +42,23 @@ export function groupBatches(entries: LogEntry[]): FoodBatch[] {
   })
 }
 
+export function sourceLabel(source: LogEntry['source']): string {
+  switch (source) {
+    case 'photo':
+      return 'Photo'
+    case 'voice':
+      return 'Voice'
+    case 'quick':
+      return 'Quick add'
+    case 'sentence':
+      return 'Text'
+    case 'search':
+      return 'Search'
+    default:
+      return 'Log'
+  }
+}
+
 export function pathLabel(path: LogEntry['debugPath']): string {
   switch (path) {
     case 'vlm':
