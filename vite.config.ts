@@ -12,12 +12,27 @@ const gitSha = (() => {
   }
 })()
 
+/** Incrementing version: 1.0.<commit count>, so it bumps automatically on each commit. */
+const gitVersion = (() => {
+  try {
+    const n = parseInt(execSync('git rev-list --count HEAD').toString().trim(), 10)
+    if (Number.isFinite(n) && n >= 0) return `1.0.${n}`
+  } catch {
+    /* not a repo / git unavailable */
+  }
+  return '1.0.0'
+})()
+
 // Expose the build tag to both dev (Vite serves import.meta.env from process.env)
 // and build (Vitest/rollup pick it up from process.env before build starts).
 process.env.VITE_OPC_BUILD = process.env.VITE_OPC_BUILD ?? `${gitSha} @ ${new Date().toISOString()}`
+process.env.VITE_OPC_VERSION = process.env.VITE_OPC_VERSION ?? gitVersion
 
 export default defineConfig({
-  base: process.env.GITHUB_PAGES === '1' ? '/opencal/' : '/',
+  // Relative base: serves correctly from any mount path (apex or the legacy
+  // <repo> subpath) and survives repo renames. Absolute /repo/ paths broke the
+  // asset URLs after the repo was renamed.
+  base: './',
   plugins: [
     react(),
     VitePWA({
