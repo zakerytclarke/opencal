@@ -4,12 +4,12 @@ type Props = {
   job: LogJob
 }
 
-function PendingRow({ item }: { item: PendingFood }) {
+function PendingRow({ item, photo }: { item: PendingFood; photo?: string }) {
   const label = [item.quantity !== 1 ? item.quantity : null, item.unit, item.query].filter(Boolean).join(' ')
   return (
     <div className="food-row is-pending" aria-busy="true">
-      <div className="food-emoji" aria-hidden>
-        <span className="spinner" />
+      <div className={`food-emoji${photo ? ' has-photo' : ''}`} aria-hidden>
+        {photo ? <img src={photo} alt="" /> : <span className="spinner" />}
       </div>
       <div className="food-main">
         <div className="food-name">{label}</div>
@@ -44,11 +44,6 @@ export function LogJobCard({ job }: Props) {
 
   return (
     <div className="food-batch is-live" aria-live="polite">
-      {job.previewUrl && (
-        <div className="job-photo">
-          <img src={job.previewUrl} alt="Meal photo" />
-        </div>
-      )}
       {extracting && (
         <PendingRow
           item={{
@@ -58,6 +53,7 @@ export function LogJobCard({ job }: Props) {
             unit: null,
             status: 'matching',
           }}
+          photo={job.previewUrl}
         />
       )}
       {open.map((item) => (
