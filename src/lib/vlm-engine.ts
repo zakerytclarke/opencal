@@ -27,6 +27,25 @@ import {
   type PickDecision,
 } from './vlmParse'
 
+function formatOne(item: ExtractedItem): string {
+  return `${item.query}${item.brand ? ` (${item.brand})` : ''} ×${item.quantity}${item.unit ? ` ${item.unit}` : ''}`
+}
+
+function formatItems(items: ExtractedItem[]): string {
+  if (!items.length) return 'no foods named'
+  return items.map((i) => i.query).join(' · ')
+}
+
+/** Console block showing the parsed structure each model output resolves into. */
+function logParsed(tag: string, items: ExtractedItem[], mealName?: string): void {
+  const line = '─'.repeat(56)
+  const shown = mealName ? `${mealName}: ${formatItems(items)}` : formatItems(items)
+  console.log(`%c[vlm:${tag}] OUTPUT → ${items.length} item(s) · ${shown}`, 'color:#08f;font-weight:600')
+  if (items.length) {
+    console.log(`%c[vlm:${tag}] items\n${line}\n%s\n${line}`, 'color:#08f', items.map(formatOne).join('\n'))
+  }
+}
+
 export type AnalyzeResult = {
   raw: string
   items: ExtractedItem[]
@@ -284,6 +303,9 @@ async function decodeGeneration(
     const decoded = String(
       sess.processor.batch_decode(out.slice(null, [prefill, null]), { skip_special_tokens: false })[0] ?? '',
     ).trim()
+    const shown = decoded.length > 800 ? `${decoded.slice(0, 800)}…(+${decoded.length - 800})` : decoded
+    console.log('%c[vlm:out] raw model completion →', 'color:#08f;font-weight:600')
+    console.log('%c[vlm:out]', 'color:#08f', shown || '(empty)')
     return decoded
   })
   generateLock = run.then(
@@ -327,6 +349,7 @@ export async function extractMealText(text: string, onProgress?: OnProgress): Pr
     const raw = await completeText('identify', prompt, 220, onProgress)
     const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
     const items = parseExtractedFoods(labeled, text)
+    logParsed('identify', items)
     return {
       raw: stripSpecialTokens(labeled) || labeled,
       items,
@@ -353,6 +376,7 @@ export async function extractMealPhoto(image: Blob, onProgress?: OnProgress): Pr
     onProgress?.('Reading the photo…', 16)
     const img = await sess.loadImage(image)
     console.log('%c[vlm:verbose]', 'color:rebeccapurple', 'photo identify: image bytes =', (image as Blob).size)
+    console.log('%c[vlm:photo] INPUT (user text)', 'color:#08f', PHOTO_EXTRACT_USER)
     const prompt = formatChatPrompt(
       [
         { role: 'system', content: PHOTO_EXTRACT_SYSTEM },
@@ -373,6 +397,7 @@ export async function extractMealPhoto(image: Blob, onProgress?: OnProgress): Pr
     const raw = await decodeGeneration(sess, inputs, 220)
     const labeled = raw.trim().startsWith('{') ? raw : `${PHOTO_EXTRACT_PREFIX}${raw}`
     const { mealName, items } = parsePhotoExtraction(labeled)
+    logParsed('photo-identify', items, items.length ? mealName ?? undefined : undefined)
     return {
       raw: stripSpecialTokens(labeled) || labeled,
       items,
@@ -414,6 +439,7 @@ export async function estimateTextPortions(
     const raw = await completeText('portion', prompt, 280, onProgress)
     const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
     const items = parseExtractedFoods(labeled, meal)
+    logParsed('text-portion', items)
     return {
       raw: stripSpecialTokens(labeled) || labeled,
       items,
@@ -461,9 +487,11 @@ export async function estimatePhotoPortions(
     )
     const inputs = await sess.runProcessor(img, prompt)
     console.log('%c[vlm]', 'color:#0a8', 'photo portion: prompt ready (1 image + catalog); generating ≤280 tokens')
+    console.log('%c[vlm:photo-portion] INPUT (user text)', 'color:#08f', user)
     const raw = await decodeGeneration(sess, inputs, 280)
     const labeled = raw.trim().startsWith('{') ? raw : `${EXTRACT_PREFIX}${raw}`
     const items = parseExtractedFoods(labeled)
+    logParsed('photo-portion', items)
     return {
       raw: stripSpecialTokens(labeled) || labeled,
       items,

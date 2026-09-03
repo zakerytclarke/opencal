@@ -120,6 +120,7 @@ h1, h2 { margin: 0; letter-spacing: -0.03em; }
 .goal-macros b { display: block; color: var(--hero); font-size: 18px; }
 
 .eyebrow { color: var(--lake); font-weight: 800; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+.eyebrow-ver { margin-left: 6px; font-weight: 600; font-size: 11px; letter-spacing: 0.02em; color: var(--ink); opacity: 0.7; vertical-align: 1px; }
 .icon-btn {
   width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--sky); color: var(--lake);
   display: grid; place-items: center;

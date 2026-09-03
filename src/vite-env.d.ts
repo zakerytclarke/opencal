@@ -10,6 +10,8 @@ declare global {
   interface ImportMetaEnv {
     /** Build tag (git sha + timestamp) — set in vite.config.ts. */
     VITE_OPC_BUILD?: string
+    /** Incrementing version (1.0.<commit count>) — set in vite.config.ts. */
+    VITE_OPC_VERSION?: string
   }
   interface Window {
     __opencalVlm?: {

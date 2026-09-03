@@ -54,7 +54,7 @@ export function Home({
   return (
     <div className="home">
       <header className="home-head">
-        <div className="eyebrow">OpenCal</div>
+        <div className="eyebrow">OpenCal{import.meta.env.VITE_OPC_VERSION ? <span className="eyebrow-ver">v{import.meta.env.VITE_OPC_VERSION}</span> : null}</div>
         <button type="button" className="icon-btn" onClick={() => setSettings(true)} aria-label="Settings">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
             <path
